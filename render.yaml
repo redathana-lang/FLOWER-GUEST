@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: flower-guest
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GONXHE_MODEL
+        value: claude-sonnet-4-6

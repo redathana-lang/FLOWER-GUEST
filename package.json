@@ -1,0 +1,16 @@
+{
+  "name": "flower-guest",
+  "version": "1.0.0",
+  "description": "Flower Hotels & Resorts — guest CRM web app (with Gonxhe AI Concierge)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
