@@ -101,25 +101,38 @@ app.post('/api/event', (req, res) => {
   res.json({ ok: true });
 });
 
+// Phone digits-only — so "+355 68 111 2233" and "0681112233" match the same guest.
+function normalizePhone(p) {
+  return String(p || '').replace(/[^0-9]/g, '');
+}
+
 app.post('/api/guest', (req, res) => {
   const { room, name, phone, checkin, checkout, midStay } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
+  if (!phone) return res.status(400).json({ error: 'phone required' });
   const guests = readJSON('guests.json', []);
-  const existing = guests.findIndex(g => g.room === (room || '—') && g.name === name);
+  const roomKey = room || '—';
+  const phoneKey = normalizePhone(phone);
+  // Identity = room + phone. Same room with a different phone is a different guest.
+  const existing = guests.findIndex(g =>
+    g.room === roomKey && normalizePhone(g.phone) === phoneKey
+  );
+  const returning = existing >= 0;
   const item = {
-    id: existing >= 0 ? guests[existing].id : crypto.randomUUID(),
-    room: room || '—',
+    id: returning ? guests[existing].id : crypto.randomUUID(),
+    room: roomKey,
     name: String(name).slice(0, 80),
-    phone: String(phone || '').slice(0, 40),
+    phone: String(phone).slice(0, 40),
     checkin: checkin || '',
     checkout: checkout || '',
     midStay: midStay || '',
-    registeredAt: existing >= 0 ? guests[existing].registeredAt : new Date().toISOString(),
+    registeredAt: returning ? guests[existing].registeredAt : new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    visits: returning ? (guests[existing].visits || 1) + 1 : 1,
   };
-  if (existing >= 0) guests[existing] = item; else guests.push(item);
+  if (returning) guests[existing] = item; else guests.push(item);
   writeJSON('guests.json', guests);
-  res.json({ ok: true });
+  res.json({ ok: true, returning, guest: item });
 });
 
 app.post('/api/feedback', (req, res) => {

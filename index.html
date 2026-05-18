@@ -1090,7 +1090,7 @@ section { padding: 14px 18px; }
     </form>
 
     <div class="form-success" id="guestSuccess">
-      <div class="card-sub">Welcome back</div>
+      <div class="card-sub" id="successLabel">Welcome</div>
       <div class="name" id="successName">—</div>
       <div class="meta" id="successMeta">—</div>
     </div>
@@ -2046,7 +2046,7 @@ function init() {
         guestData = JSON.parse(saved);
         roomNo = prefillRoom;
         document.getElementById('navRoom').textContent = 'Room ' + prefillRoom;
-        showGuestSuccess();
+        showGuestSuccess(true);
       } catch (e) { console.warn('Bad guest cache'); }
     }
   }
@@ -2073,7 +2073,7 @@ function init() {
 /* ═══════════════════════════════════════════════════════════════════
    GUEST DATA
    ═══════════════════════════════════════════════════════════════════ */
-function submitGuest(e) {
+async function submitGuest(e) {
   e.preventDefault();
   const room = document.getElementById('gRoom').value.trim();
   const name = document.getElementById('gName').value.trim();
@@ -2106,17 +2106,38 @@ function submitGuest(e) {
   all.push(guestData);
   localStorage.setItem('fh_all_guests', JSON.stringify(all));
 
-  // Send to staff backend
-  postBackend('/api/guest', { room: roomNo, name, phone, checkin, checkout, midStay });
+  // Send to staff backend — server uses (room + phone) as identity and tells us
+  // whether this is a returning guest (same room + phone we've already seen).
+  let returning = false;
+  try {
+    const r = await fetch('/api/guest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ room: roomNo, name, phone, checkin, checkout, midStay }),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      returning = !!data.returning;
+      // Trust the server's canonical record if it's a returning guest
+      // (lets us greet by the original name even if they typed it differently).
+      if (returning && data.guest && data.guest.name) {
+        guestData.name = data.guest.name;
+        localStorage.setItem('fh_guest_' + roomNo, JSON.stringify(guestData));
+      }
+    }
+  } catch (_) { /* fall through — offline-friendly */ }
 
-  showGuestSuccess();
-  logActivity('guest_registered');
-  showToast('Welcome, ' + name + ' — your stay is set');
+  showGuestSuccess(returning);
+  logActivity(returning ? 'guest_returned' : 'guest_registered');
+  showToast(returning
+    ? 'Welcome back, ' + guestData.name + ' — good to see you again'
+    : 'Welcome, ' + name + ' — your stay is set');
 }
 
-function showGuestSuccess() {
+function showGuestSuccess(returning) {
   document.getElementById('guestForm').style.display = 'none';
   document.getElementById('guestSuccess').classList.add('visible');
+  document.getElementById('successLabel').textContent = returning ? 'Welcome back' : 'Welcome';
   document.getElementById('successName').textContent = guestData.name || '';
   const ci = guestData.checkin ? new Date(guestData.checkin).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
   const co = guestData.checkout ? new Date(guestData.checkout).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
