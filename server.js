@@ -272,6 +272,53 @@ app.post('/api/system-prompt/reset', requireDashboardAuth, (_req, res) => {
   res.json({ ok: true, prompt: getSystemPrompt() });
 });
 
+// ─── KNOWLEDGE IMPORT (PDF / DOCX / TXT → extracted text) ───────────────
+const multer = require('multer');
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
+});
+
+app.post('/api/system-prompt/import', requireDashboardAuth, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  const name = req.file.originalname || 'upload';
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const buf = req.file.buffer;
+  try {
+    let text = '';
+    if (ext === 'pdf') {
+      const { PDFParse } = require('pdf-parse');
+      const parser = new PDFParse({ data: buf });
+      const out = await parser.getText();
+      text = (out.pages || [])
+        .map(p => (p.text || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+      if (!text || text.length < 50) {
+        return res.status(422).json({
+          error: 'no_text_layer',
+          hint: 'This PDF appears to be image-only (a scan or design export with no text layer). Save it as a text PDF, or copy the text manually and paste it into the editor.',
+          filename: name,
+        });
+      }
+    } else if (ext === 'docx') {
+      const mammoth = require('mammoth');
+      const out = await mammoth.extractRawText({ buffer: buf });
+      text = out.value || '';
+    } else if (ext === 'txt' || ext === 'md') {
+      text = buf.toString('utf8');
+    } else {
+      return res.status(400).json({ error: 'unsupported_type', supports: ['pdf', 'docx', 'txt', 'md'] });
+    }
+    // Normalize whitespace: collapse 3+ blank lines, strip trailing spaces.
+    text = text.replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+    res.json({ ok: true, filename: name, text, length: text.length });
+  } catch (err) {
+    console.error('Import failed', err);
+    res.status(500).json({ error: 'extract_failed', detail: String(err.message || err) });
+  }
+});
+
 // ─── PAGES ───────────────────────────────────────────────────────────────
 const noCache = (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

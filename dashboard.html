@@ -773,14 +773,19 @@ table.tbl {
           <div class="panel-sub">Edit the AI concierge's system prompt — changes apply immediately to all guests</div>
         </div>
         <div class="panel-actions">
+          <button class="btn" onclick="document.getElementById('promptFile').click()">Upload PDF / DOCX</button>
           <button class="btn" onclick="reloadPrompt()">Reload</button>
           <button class="btn danger" onclick="resetPrompt()">Reset to Default</button>
           <button class="btn primary" onclick="savePrompt()">Save</button>
+          <input type="file" id="promptFile" accept=".pdf,.docx,.txt,.md" style="display:none" onchange="importFile(event)" />
         </div>
       </div>
       <div class="card card-pad">
         <textarea class="prompt-textarea" id="promptTextarea" placeholder="System prompt will load here…"></textarea>
         <div class="prompt-meta" id="promptMeta">—</div>
+        <div class="prompt-meta" style="margin-top:4px; color:var(--cream-faint);">
+          Uploads append at the bottom under a <code style="color:var(--gold);">## FROM: filename</code> header — review, trim, then <strong>Save</strong>.
+        </div>
       </div>
     </section>
 
@@ -1222,6 +1227,44 @@ async function savePrompt() {
     toast('Prompt saved — applies to next chat turn', 'success');
   } catch (err) { toast('Save failed', 'error'); }
 }
+async function importFile(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  toast('Extracting ' + file.name + '…');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const r = await fetch('/api/system-prompt/import', {
+      method: 'POST',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+      body: fd,
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      if (data.error === 'no_text_layer') {
+        toast('Image-only PDF — paste the text manually', 'error');
+        alert((data.hint || 'No text in this PDF.') + '\n\nFile: ' + file.name);
+      } else if (data.error === 'unsupported_type') {
+        toast('Only PDF, DOCX, TXT, MD', 'error');
+      } else {
+        toast('Extract failed', 'error');
+      }
+      e.target.value = '';
+      return;
+    }
+    const ta = document.getElementById('promptTextarea');
+    const header = '\n\n## FROM: ' + file.name + '\n\n';
+    ta.value = (ta.value || '').replace(/\s+$/, '') + header + data.text;
+    ta.scrollTop = ta.scrollHeight;
+    updatePromptMeta();
+    toast('Imported ' + data.length.toLocaleString() + ' chars — review and Save', 'success');
+  } catch (err) {
+    toast('Upload failed', 'error');
+  } finally {
+    e.target.value = '';
+  }
+}
+
 async function resetPrompt() {
   if (!confirm('Reset the Gonxhe system prompt to the default shipped in code?')) return;
   try {
