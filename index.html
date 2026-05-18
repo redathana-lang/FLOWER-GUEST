@@ -1062,9 +1062,15 @@ section { padding: 14px 18px; }
     <div class="card-title"><em>Tell us a little about you</em></div>
 
     <form class="form-grid" id="guestForm" onsubmit="submitGuest(event)">
-      <div class="form-field">
-        <label class="form-label">Your name</label>
-        <input class="form-input" id="gName" placeholder="What may we call you?" required />
+      <div class="form-row-2">
+        <div class="form-field">
+          <label class="form-label">Room number</label>
+          <input class="form-input" id="gRoom" placeholder="e.g. 304" inputmode="numeric" autocomplete="off" required />
+        </div>
+        <div class="form-field">
+          <label class="form-label">Your name</label>
+          <input class="form-input" id="gName" placeholder="What may we call you?" required />
+        </div>
       </div>
       <div class="form-field">
         <label class="form-label">Phone / WhatsApp</label>
@@ -2009,10 +2015,22 @@ const conversationHistory = [];
    INIT
    ═══════════════════════════════════════════════════════════════════ */
 function init() {
-  // Room from URL
+  // Room — either from URL (?room=304) or remembered from a previous visit on this device.
+  // The shared QR has no room param, so the guest enters it on the form.
   const params = new URLSearchParams(window.location.search);
-  roomNo = params.get('room') || '—';
-  document.getElementById('navRoom').textContent = roomNo !== '—' ? 'Room ' + roomNo : 'Welcome';
+  const urlRoom = params.get('room');
+  const lastRoom = localStorage.getItem('fh_last_room');
+  const prefillRoom = urlRoom || lastRoom || '';
+  document.getElementById('gRoom').value = prefillRoom;
+
+  if (urlRoom) {
+    // Per-room link — trust it immediately
+    roomNo = urlRoom;
+    document.getElementById('navRoom').textContent = 'Room ' + urlRoom;
+  } else {
+    roomNo = '—';
+    document.getElementById('navRoom').textContent = 'Welcome';
+  }
 
   // Default dates
   const today = new Date();
@@ -2020,13 +2038,17 @@ function init() {
   const co = new Date(today); co.setDate(co.getDate() + 3);
   document.getElementById('gCheckout').value = co.toISOString().split('T')[0];
 
-  // Restore guest data
-  const saved = localStorage.getItem('fh_guest_' + roomNo);
-  if (saved) {
-    try {
-      guestData = JSON.parse(saved);
-      showGuestSuccess();
-    } catch (e) { console.warn('Bad guest cache'); }
+  // Restore guest data if we have a remembered registration for this room
+  if (prefillRoom) {
+    const saved = localStorage.getItem('fh_guest_' + prefillRoom);
+    if (saved) {
+      try {
+        guestData = JSON.parse(saved);
+        roomNo = prefillRoom;
+        document.getElementById('navRoom').textContent = 'Room ' + prefillRoom;
+        showGuestSuccess();
+      } catch (e) { console.warn('Bad guest cache'); }
+    }
   }
 
   // Fade-in observer
@@ -2053,11 +2075,17 @@ function init() {
    ═══════════════════════════════════════════════════════════════════ */
 function submitGuest(e) {
   e.preventDefault();
+  const room = document.getElementById('gRoom').value.trim();
   const name = document.getElementById('gName').value.trim();
   const phone = document.getElementById('gPhone').value.trim();
   const checkin = document.getElementById('gCheckin').value;
   const checkout = document.getElementById('gCheckout').value;
-  if (!name || !phone || !checkin || !checkout) return;
+  if (!room || !name || !phone || !checkin || !checkout) return;
+
+  // Commit room to global state + topnav badge
+  roomNo = room;
+  document.getElementById('navRoom').textContent = 'Room ' + room;
+  localStorage.setItem('fh_last_room', room);
 
   // Auto-calc mid-stay
   const ci = new Date(checkin), co = new Date(checkout);
