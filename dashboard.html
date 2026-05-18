@@ -634,6 +634,7 @@ table.tbl {
   <div class="tabs" id="tabs">
     <button class="tab active" data-panel="guests" onclick="showTab('guests')">Guest Database <span class="tab-badge" id="badge-guests">0</span></button>
     <button class="tab" data-panel="midstay" onclick="showTab('midstay')">Mid-Stay Queue <span class="tab-badge" id="badge-midstay">0</span></button>
+    <button class="tab" data-panel="broadcast" onclick="showTab('broadcast')">Broadcast</button>
     <button class="tab" data-panel="activity" onclick="showTab('activity')">Activity Feed <span class="tab-badge" id="badge-activity">0</span></button>
     <button class="tab" data-panel="analytics" onclick="showTab('analytics')">Analytics</button>
     <button class="tab" data-panel="conversations" onclick="showTab('conversations')">Conversations <span class="tab-badge" id="badge-conversations">0</span></button>
@@ -702,6 +703,78 @@ table.tbl {
       </div>
     </section>
 
+    <!-- BROADCAST ─────────────────────────────────────────── -->
+    <section class="panel" id="panel-broadcast">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Broadcast <em>to guests</em></div>
+          <div class="panel-sub">Send WhatsApp messages with optional PDF — staff taps Send on each one</div>
+        </div>
+      </div>
+      <div class="card card-pad">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+          <div>
+            <div style="font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:6px;">Audience</div>
+            <select class="search-input" id="bcAudience" onchange="renderBroadcastRecipients()" style="width:100%;">
+              <option value="inhouse">In-house now</option>
+              <option value="upcoming">Upcoming arrivals</option>
+              <option value="recent">Recent (last 30 days)</option>
+              <option value="all">All guests ever</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:6px;">Filter (optional)</div>
+            <input class="search-input" id="bcFilter" placeholder="Room or name…" oninput="renderBroadcastRecipients()" style="width:100%;" />
+          </div>
+        </div>
+
+        <div style="font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:6px;">Message</div>
+        <textarea class="prompt-textarea" id="bcMessage" style="min-height:180px;" placeholder="Dear {{name}},&#10;&#10;Tonight at 18:00 we are opening the season with live jazz at the Beach Bar — Aperol Spritz on the house for our hotel guests.&#10;&#10;Hope to see you there.&#10;— Flower Hotels & Resorts" oninput="renderBroadcastRecipients()"></textarea>
+        <div class="prompt-meta" style="margin-top:6px;">
+          Placeholders: <code style="color:var(--gold);">{{name}}</code> · <code style="color:var(--gold);">{{room}}</code> · <code style="color:var(--gold);">{{date}}</code>
+        </div>
+
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:14px;">
+          <div style="flex:1; min-width:240px;">
+            <div style="font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:6px;">Attachment (optional)</div>
+            <select class="search-input" id="bcAttachment" onchange="renderBroadcastRecipients()" style="width:100%;">
+              <option value="">— No attachment —</option>
+            </select>
+          </div>
+          <button class="btn" onclick="document.getElementById('bcFile').click()" style="margin-top:21px;">Upload New</button>
+          <input type="file" id="bcFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="uploadAttachment(event)" />
+          <button class="btn danger" onclick="deleteSelectedAttachment()" style="margin-top:21px;">Remove</button>
+        </div>
+      </div>
+
+      <div class="panel-head" style="margin-top:24px;">
+        <div>
+          <div class="panel-title" style="font-size:20px;">Recipients <em id="bcCount">— 0</em></div>
+          <div class="panel-sub">One tap opens WhatsApp on your phone with the message pre-filled</div>
+        </div>
+        <div class="panel-actions">
+          <button class="btn" onclick="resetBroadcastSent()">Reset sent</button>
+          <button class="btn primary" onclick="openAllBroadcast()">Open all in WhatsApp</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="tbl" id="bcTable">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Guest</th>
+                <th>Phone</th>
+                <th>Preview</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="bcBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ACTIVITY FEED ─────────────────────────────────────── -->
     <section class="panel" id="panel-activity">
       <div class="panel-head">
@@ -717,6 +790,7 @@ table.tbl {
             <option value="book_table">Table bookings</option>
             <option value="gonxhe_opened">Gonxhe opens</option>
             <option value="feedback">Feedback</option>
+            <option value="broadcast_sent">Broadcasts sent</option>
             <option value="wifi_copied">Wi-Fi copies</option>
             <option value="view_menu">Menu views</option>
             <option value="social_click">Social clicks</option>
@@ -847,6 +921,8 @@ let state = {
   activeConvId: null,
   promptOnDisk: '',
   health: '—',
+  attachments: [],
+  bcSent: new Set(),
 };
 
 /* ─── LOCK / AUTH ─────────────────────────────────────────── */
@@ -950,6 +1026,7 @@ function renderAll() {
   renderActivity();
   renderAnalytics();
   renderConversations();
+  renderBroadcastRecipients();
   renderSettings();
   updateBadges();
 }
@@ -1201,6 +1278,178 @@ function renderConvView() {
   `).join('') || '<div class="conv-empty">No messages</div>';
 }
 
+/* ─── BROADCAST ───────────────────────────────────────────── */
+function audienceList() {
+  const aud = document.getElementById('bcAudience').value;
+  const filter = (document.getElementById('bcFilter').value || '').toLowerCase().trim();
+  const now = new Date();
+  const dayMs = 86400000;
+  let list = state.guests.slice();
+  if (aud === 'inhouse') {
+    list = list.filter(g => {
+      if (!g.checkin || !g.checkout) return false;
+      return new Date(g.checkin) <= now && now <= new Date(g.checkout);
+    });
+  } else if (aud === 'upcoming') {
+    list = list.filter(g => g.checkin && new Date(g.checkin) > now);
+  } else if (aud === 'recent') {
+    const cutoff = now.getTime() - 30 * dayMs;
+    list = list.filter(g => g.registeredAt && new Date(g.registeredAt).getTime() > cutoff);
+  }
+  if (filter) {
+    list = list.filter(g =>
+      (g.name || '').toLowerCase().includes(filter) ||
+      (g.room || '').toLowerCase().includes(filter) ||
+      (g.phone || '').toLowerCase().includes(filter)
+    );
+  }
+  return list.filter(g => g.phone);
+}
+
+function renderMessage(template, g) {
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+  const firstName = (g.name || '').split(/\s+/)[0] || 'guest';
+  return String(template || '')
+    .replaceAll('{{name}}', firstName)
+    .replaceAll('{{room}}', g.room || '')
+    .replaceAll('{{date}}', today);
+}
+
+function attachmentUrl() {
+  const sel = document.getElementById('bcAttachment').value;
+  if (!sel) return '';
+  return window.location.origin + sel;
+}
+
+function fullMessage(template, g) {
+  let msg = renderMessage(template, g);
+  const url = attachmentUrl();
+  if (url) msg += '\n\n' + url;
+  return msg;
+}
+
+function waLink(phone, message) {
+  const digits = String(phone || '').replace(/[^0-9]/g, '');
+  return 'https://wa.me/' + digits + '?text=' + encodeURIComponent(message);
+}
+
+function renderBroadcastRecipients() {
+  const list = audienceList();
+  const template = document.getElementById('bcMessage').value;
+  document.getElementById('bcCount').textContent = '— ' + list.length;
+  const tbody = document.getElementById('bcBody');
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="tbl-empty">No recipients match this audience</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(g => {
+    const msg = fullMessage(template, g);
+    const link = waLink(g.phone, msg);
+    const sent = state.bcSent.has(g.id);
+    return `<tr data-id="${g.id}">
+      <td><span class="tbl-room">${escapeHtml(g.room || '—')}</span></td>
+      <td><div class="tbl-name">${escapeHtml(g.name || '')}</div></td>
+      <td><div class="tbl-meta">${escapeHtml(g.phone || '')}</div></td>
+      <td><div class="tbl-meta" style="white-space:pre-wrap; max-width:340px;">${escapeHtml((msg || '').slice(0, 140))}${msg.length > 140 ? '…' : ''}</div></td>
+      <td>${sent
+        ? '<span class="pill green">✓ Sent</span>'
+        : `<a class="btn primary" href="${link}" target="_blank" rel="noopener" onclick="markBroadcastSent('${g.id}','${escapeJs(g.room)}','${escapeJs(g.name)}')">WhatsApp</a>`
+      }</td>
+    </tr>`;
+  }).join('');
+}
+
+function markBroadcastSent(id, room, name) {
+  state.bcSent.add(id);
+  const row = document.querySelector('#bcBody tr[data-id="' + id + '"]');
+  if (row) row.querySelector('td:last-child').innerHTML = '<span class="pill green">✓ Sent</span>';
+  // Log to backend
+  fetch('/api/event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ room, type: 'broadcast_sent', detail: 'WhatsApp', guest: name }),
+  }).catch(() => {});
+}
+
+function openAllBroadcast() {
+  const list = audienceList().filter(g => !state.bcSent.has(g.id));
+  if (list.length === 0) { toast('No unsent recipients', 'error'); return; }
+  if (!confirm('Open ' + list.length + ' WhatsApp tab' + (list.length === 1 ? '' : 's') + ' in sequence?\n\nYou will tap Send manually on each one.')) return;
+  const template = document.getElementById('bcMessage').value;
+  list.forEach((g, i) => {
+    setTimeout(() => {
+      const msg = fullMessage(template, g);
+      window.open(waLink(g.phone, msg), '_blank', 'noopener');
+      markBroadcastSent(g.id, g.room, g.name);
+    }, i * 400);
+  });
+  toast('Opening ' + list.length + ' tabs…');
+}
+
+function resetBroadcastSent() {
+  state.bcSent.clear();
+  renderBroadcastRecipients();
+  toast('Reset — all rows are unsent again');
+}
+
+async function loadAttachments() {
+  try {
+    const data = await apiGet('/api/uploads');
+    state.attachments = data.files || [];
+    const sel = document.getElementById('bcAttachment');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— No attachment —</option>' +
+      state.attachments.map(f =>
+        `<option value="${escapeHtml(f.url)}">${escapeHtml(f.filename)} · ${(f.size / 1024).toFixed(0)} KB</option>`
+      ).join('');
+    if (current && state.attachments.find(f => f.url === current)) sel.value = current;
+  } catch (_) {}
+}
+
+async function uploadAttachment(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  toast('Uploading ' + file.name + '…');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const r = await fetch('/api/uploads', {
+      method: 'POST',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+      body: fd,
+    });
+    const data = await r.json();
+    if (!r.ok) { toast('Upload failed', 'error'); return; }
+    await loadAttachments();
+    document.getElementById('bcAttachment').value = data.url;
+    renderBroadcastRecipients();
+    toast('Attached ' + data.filename, 'success');
+  } catch (err) { toast('Upload failed', 'error'); }
+  finally { e.target.value = ''; }
+}
+
+async function deleteSelectedAttachment() {
+  const sel = document.getElementById('bcAttachment');
+  const url = sel.value;
+  if (!url) { toast('No attachment selected', 'error'); return; }
+  const filename = url.split('/').pop();
+  if (!confirm('Delete ' + filename + ' from the server? This cannot be undone.')) return;
+  try {
+    const r = await fetch('/api/uploads/' + encodeURIComponent(filename), {
+      method: 'DELETE',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+    });
+    if (!r.ok) { toast('Delete failed', 'error'); return; }
+    await loadAttachments();
+    renderBroadcastRecipients();
+    toast('Deleted', 'success');
+  } catch (err) { toast('Delete failed', 'error'); }
+}
+
+function escapeJs(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 /* ─── TRAIN GONXHE ────────────────────────────────────────── */
 async function reloadPrompt() {
   try {
@@ -1333,6 +1582,7 @@ function showTab(name) {
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.panel === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   if (name === 'train' && !document.getElementById('promptTextarea').value) reloadPrompt();
+  if (name === 'broadcast') loadAttachments();
 }
 
 document.getElementById('promptTextarea').addEventListener('input', updatePromptMeta);

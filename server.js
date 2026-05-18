@@ -279,6 +279,66 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
 });
 
+// ─── BROADCAST ATTACHMENTS (PDFs/images saved to disk, served publicly) ──
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+function slugifyFilename(name) {
+  const dot = name.lastIndexOf('.');
+  const stem = (dot > 0 ? name.slice(0, dot) : name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'file';
+  const ext = (dot > 0 ? name.slice(dot + 1) : '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return ext ? `${stamp}-${stem}.${ext}` : `${stamp}-${stem}`;
+}
+
+const attachmentUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    filename: (_req, file, cb) => cb(null, slugifyFilename(file.originalname || 'file')),
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+app.post('/api/uploads', requireDashboardAuth, attachmentUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  res.json({
+    ok: true,
+    filename: req.file.filename,
+    url: '/uploads/' + req.file.filename,
+    size: req.file.size,
+  });
+});
+
+app.get('/api/uploads', requireDashboardAuth, (_req, res) => {
+  try {
+    const files = fs.readdirSync(UPLOADS_DIR)
+      .filter(n => !n.startsWith('.'))
+      .map(n => {
+        const st = fs.statSync(path.join(UPLOADS_DIR, n));
+        return { filename: n, url: '/uploads/' + n, size: st.size, mtime: st.mtime.toISOString() };
+      })
+      .sort((a, b) => (a.mtime > b.mtime ? -1 : 1));
+    res.json({ files });
+  } catch (_) { res.json({ files: [] }); }
+});
+
+app.delete('/api/uploads/:name', requireDashboardAuth, (req, res) => {
+  const safe = path.basename(req.params.name);
+  try {
+    fs.unlinkSync(path.join(UPLOADS_DIR, safe));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(404).json({ error: 'not_found' });
+  }
+});
+
+// Serve uploaded files publicly so wa.me / sms links can point at them.
+app.use('/uploads', express.static(UPLOADS_DIR, { fallthrough: true, maxAge: '1h' }));
+
 app.post('/api/system-prompt/import', requireDashboardAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
   const name = req.file.originalname || 'upload';
