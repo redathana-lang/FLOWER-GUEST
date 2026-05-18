@@ -4,9 +4,17 @@ services:
     env: node
     buildCommand: npm install
     startCommand: node server.js
-    plan: free
+    plan: starter
+    disk:
+      name: flower-guest-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
       - key: GONXHE_MODEL
         value: claude-sonnet-4-6
+      - key: DATA_DIR
+        value: /data

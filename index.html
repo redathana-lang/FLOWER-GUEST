@@ -1784,11 +1784,36 @@ section { padding: 14px 18px; }
 /* ═══════════════════════════════════════════════════════════════════
    FLOWER HOTELS GUEST PAGE — CONFIG
    ═══════════════════════════════════════════════════════════════════ */
-const GONXHE_ENDPOINT = '/api/gonxhe';   // server proxies to Anthropic; API key stays on the server
+const GONXHE_ENDPOINT = '/api/gonxhe';   // server proxies to Anthropic; key + system prompt live server-side
 const MAX_TURNS_PER_SESSION = 30;
 const WA_PHONE = '355676040707';
 const WIFI_PASSWORD = 'flower2025';
 const BUBBLE_DELAY_MS = 15000;
+
+/* Session id — used so the staff dashboard can group activity + Gonxhe chat by visit */
+const SESSION_ID = (() => {
+  try {
+    let id = sessionStorage.getItem('fh_session_id');
+    if (!id) {
+      id = (crypto.randomUUID && crypto.randomUUID()) ||
+           ('s-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9));
+      sessionStorage.setItem('fh_session_id', id);
+    }
+    return id;
+  } catch (e) { return 's-' + Date.now(); }
+})();
+
+/* Best-effort POST to the staff backend. Never blocks the UI. */
+function postBackend(path, body) {
+  try {
+    fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      keepalive: true,
+    }).catch(() => {});
+  } catch (_) {}
+}
 
 const SYSTEM_PROMPT = `You are Gonxhe (pronounced "GON-jeh"), the AI Concierge for Flower Hotels & Resorts in Golem, Durrës, Albania. Your name means "rosebud" in Albanian — share this with guests if asked. You embody mikpritja — the warm Albanian tradition of hospitality.
 
@@ -2053,6 +2078,9 @@ function submitGuest(e) {
   all.push(guestData);
   localStorage.setItem('fh_all_guests', JSON.stringify(all));
 
+  // Send to staff backend
+  postBackend('/api/guest', { room: roomNo, name, phone, checkin, checkout, midStay });
+
   showGuestSuccess();
   logActivity('guest_registered');
   showToast('Welcome, ' + name + ' — your stay is set');
@@ -2083,6 +2111,14 @@ function logActivity(type, detail) {
     if (log.length > 1000) log.shift();
     localStorage.setItem('fh_activity', JSON.stringify(log));
   } catch (e) { console.warn('Activity log failed', e); }
+  // Mirror to staff backend
+  postBackend('/api/event', {
+    room: roomNo,
+    type,
+    detail: detail || '',
+    guest: guestData.name || '',
+    sessionId: SESSION_ID,
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -2151,6 +2187,9 @@ function rateStay(n) {
   m.textContent = messages[n];
   m.classList.add('visible');
   logActivity('feedback', `${n}/5`);
+  postBackend('/api/feedback', {
+    room: roomNo, guest: guestData.name || '', rating: n, sessionId: SESSION_ID,
+  });
 
   if (n <= 2) {
     const guestLine = guestData.name ? ` from ${guestData.name}` : '';
@@ -2254,6 +2293,13 @@ async function callClaude(userMessage) {
   const data = await response.json();
   const text = (data.text || '').trim();
   conversationHistory.push({ role: 'assistant', content: text });
+  // Mirror conversation to staff backend so Conversations tab shows live transcripts
+  postBackend('/api/conversation', {
+    sessionId: SESSION_ID,
+    room: roomNo,
+    guest: guestData.name || '',
+    messages: conversationHistory,
+  });
   return text || "I'm so sorry, I didn't quite catch that. Could you try again?";
 }
 

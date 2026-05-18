@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#070E1B" />
+<title>Flower CRM — Staff Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy: #070E1B;
+  --navy-panel: #0E1A2E;
+  --navy-elev: #142540;
+  --navy-line: rgba(196, 169, 106, 0.10);
+  --gold: #C4A96A;
+  --gold-light: #D8C08E;
+  --gold-deep: #9C8550;
+  --gold-soft: rgba(196, 169, 106, 0.12);
+  --cream: #F0E8D8;
+  --cream-mid: rgba(240, 232, 216, 0.78);
+  --cream-soft: rgba(240, 232, 216, 0.55);
+  --cream-faint: rgba(240, 232, 216, 0.35);
+  --green: #6FAA8E;
+  --red: #B26A6A;
+  --amber: #D8B05E;
+  --r: 12px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Jost', sans-serif;
+  color: var(--cream);
+  background: var(--navy);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px; line-height: 1.55;
+  background:
+    radial-gradient(ellipse 900px 700px at 15% -5%, rgba(196,169,106,0.06), transparent 60%),
+    radial-gradient(ellipse 800px 800px at 110% 30%, rgba(196,169,106,0.04), transparent 65%),
+    var(--navy);
+  min-height: 100vh;
+}
+
+/* ─── LOCK SCREEN ──────────────────────────────────────────── */
+.lock-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: var(--navy);
+}
+.lock-screen.hidden { display: none; }
+.lock-card {
+  width: 100%; max-width: 380px;
+  background: var(--navy-panel);
+  border: 1px solid rgba(196,169,106,0.22);
+  border-radius: 22px;
+  padding: 40px 32px;
+  text-align: center;
+  box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+}
+.lock-emblem {
+  width: 54px; height: 54px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-light));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', serif; font-style: italic; font-weight: 600;
+  font-size: 26px; color: var(--navy);
+  margin: 0 auto 22px;
+  box-shadow: 0 8px 24px rgba(196,169,106,0.4);
+}
+.lock-title {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  font-size: 22px; font-weight: 500;
+  margin-bottom: 6px;
+}
+.lock-sub {
+  font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--cream-faint);
+  margin-bottom: 28px;
+}
+.lock-input {
+  width: 100%;
+  background: var(--navy);
+  border: 1px solid var(--navy-line);
+  border-radius: 11px;
+  padding: 14px 16px;
+  font-family: 'Jost', sans-serif;
+  font-size: 14px;
+  color: var(--cream);
+  outline: none;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+.lock-input:focus { border-color: rgba(196,169,106,0.5); }
+.lock-input::placeholder { color: var(--cream-faint); }
+.lock-btn {
+  width: 100%;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-light));
+  color: var(--navy);
+  border: none;
+  border-radius: 11px;
+  font-family: 'Jost', sans-serif;
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.lock-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(196,169,106,0.4); }
+.lock-error {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: 10px;
+  min-height: 16px;
+}
+
+/* ─── APP SHELL ────────────────────────────────────────────── */
+.app {
+  display: flex; flex-direction: column;
+  min-height: 100vh;
+}
+.topbar {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 22px;
+  background: rgba(7, 14, 27, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--navy-line);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-emblem {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-light));
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', serif; font-style: italic; font-weight: 600;
+  font-size: 18px; color: var(--navy);
+}
+.brand-text { line-height: 1.1; }
+.brand-name {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  font-size: 18px; font-weight: 500;
+}
+.brand-sub {
+  font-size: 9.5px; letter-spacing: 0.28em; text-transform: uppercase;
+  color: var(--gold);
+  margin-top: 3px;
+  font-weight: 600;
+}
+.status {
+  display: flex; align-items: center; gap: 16px;
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--cream-soft);
+}
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 12px rgba(111,170,142,0.6);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.status-tag {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold);
+  border: 1px solid var(--navy-line);
+  font-weight: 600;
+}
+.status-tag.muted { color: var(--cream-faint); background: transparent; }
+.logout-btn {
+  background: transparent;
+  color: var(--cream-soft);
+  border: 1px solid var(--navy-line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  cursor: pointer;
+  font-family: 'Jost', sans-serif;
+  font-weight: 600;
+}
+.logout-btn:hover { color: var(--cream); border-color: rgba(196,169,106,0.4); }
+
+/* ─── TABS ─────────────────────────────────────────────────── */
+.tabs {
+  display: flex; gap: 4px;
+  padding: 8px 14px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: rgba(7, 14, 27, 0.6);
+  border-bottom: 1px solid var(--navy-line);
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--cream-soft);
+  font-family: 'Jost', sans-serif;
+  font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--cream); }
+.tab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+.tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+/* ─── PANELS ───────────────────────────────────────────────── */
+.panels {
+  padding: 24px;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+.panel { display: none; }
+.panel.active { display: block; }
+
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.panel-title {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  font-size: 28px; font-weight: 500;
+}
+.panel-title em { color: var(--gold); font-weight: 400; font-style: italic; }
+.panel-sub {
+  font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--cream-faint);
+  margin-top: 4px;
+}
+.panel-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ─── CARDS / TABLES ───────────────────────────────────────── */
+.card {
+  background: var(--navy-panel);
+  border: 1px solid var(--navy-line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.card + .card { margin-top: 16px; }
+.card-pad { padding: 18px 20px; }
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.kpi {
+  background: var(--navy-panel);
+  border: 1px solid var(--navy-line);
+  border-radius: 14px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  opacity: 0.4;
+}
+.kpi-label {
+  font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--cream-faint);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.kpi-value {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  font-size: 36px; font-weight: 500;
+  color: var(--cream);
+  line-height: 1;
+}
+.kpi-meta {
+  font-size: 11px;
+  color: var(--cream-soft);
+  margin-top: 6px;
+}
+.kpi.gold .kpi-value { color: var(--gold); }
+.kpi.green .kpi-value { color: var(--green); }
+
+/* ─── TABLES ───────────────────────────────────────────────── */
+.tbl-wrap {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+table.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.tbl th {
+  text-align: left;
+  font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--gold);
+  font-weight: 600;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--navy-line);
+  background: rgba(7, 14, 27, 0.4);
+  white-space: nowrap;
+}
+.tbl td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--navy-line);
+  color: var(--cream);
+  vertical-align: top;
+}
+.tbl tr:last-child td { border-bottom: none; }
+.tbl tr:hover td { background: rgba(196,169,106,0.04); }
+
+.tbl-empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--cream-faint);
+  font-size: 13px;
+  font-style: italic;
+  font-family: 'Playfair Display', serif;
+}
+
+.pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.pill.gold { background: var(--gold-soft); color: var(--gold); }
+.pill.green { background: rgba(111,170,142,0.15); color: var(--green); }
+.pill.red { background: rgba(178,106,106,0.15); color: var(--red); }
+.pill.muted { background: rgba(240,232,216,0.06); color: var(--cream-faint); }
+
+.tbl-room {
+  font-family: 'Playfair Display', serif; font-style: italic;
+  font-weight: 500;
+  color: var(--gold);
+}
+.tbl-name {
+  font-weight: 500;
+  color: var(--cream);
+}
+.tbl-meta {
+  font-size: 11px;
+  color: var(--cream-faint);
+  letter-spacing: 0.04em;
+}
+.tbl-ts {
+  font-size: 11px;
+  color: var(--cream-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── BUTTONS / INPUTS ─────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px;
+  background: transparent;
+  border: 1px solid var(--navy-line);
+  border-radius: 999px;
+  color: var(--cream-soft);
+  font-family: 'Jost', sans-serif;
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { color: var(--cream); border-color: rgba(196,169,106,0.35); }
+.btn.primary {
+  background: linear-gradient(135deg, var(--gold), var(--gold-light));
+  color: var(--navy);
+  border: none;
+}
+.btn.primary:hover { color: var(--navy); box-shadow: 0 6px 18px rgba(196,169,106,0.35); }
+.btn.danger:hover { color: var(--red); border-color: rgba(178,106,106,0.4); }
+
+.search-input {
+  background: var(--navy-panel);
+  border: 1px solid var(--navy-line);
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-family: 'Jost', sans-serif;
+  font-size: 13px;
+  color: var(--cream);
+  outline: none;
+  min-width: 200px;
+}
+.search-input:focus { border-color: rgba(196,169,106,0.4); }
+.search-input::placeholder { color: var(--cream-faint); }
+
+/* ─── ACTIVITY FEED ────────────────────────────────────────── */
+.feed-row {
+  display: grid;
+  grid-template-columns: 90px 80px 1fr;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--navy-line);
+  font-size: 13px;
+  align-items: baseline;
+}
+.feed-row:last-child { border-bottom: none; }
+.feed-row .ts { font-size: 10.5px; color: var(--cream-faint); font-variant-numeric: tabular-nums; }
+.feed-row .room { color: var(--gold); font-family: 'Playfair Display', serif; font-style: italic; }
+.feed-row .meta { color: var(--cream); }
+.feed-row .meta .type {
+  font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--cream-faint);
+  font-weight: 600;
+  margin-right: 8px;
+}
+.feed-row .meta .guest { color: var(--cream-soft); font-size: 12px; margin-left: 6px; }
+
+/* ─── CONVERSATIONS ────────────────────────────────────────── */
+.conv-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  min-height: 520px;
+}
+@media (max-width: 768px) { .conv-grid { grid-template-columns: 1fr; } }
+.conv-list { overflow-y: auto; max-height: 70vh; }
+.conv-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--navy-line);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.conv-item:hover { background: rgba(196,169,106,0.05); }
+.conv-item.active { background: rgba(196,169,106,0.10); border-left: 3px solid var(--gold); }
+.conv-item-head {
+  display: flex; justify-content: space-between;
+  font-size: 12px; margin-bottom: 4px;
+}
+.conv-item-head .who {
+  color: var(--cream);
+  font-weight: 500;
+}
+.conv-item-head .who em {
+  color: var(--gold);
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  margin-right: 5px;
+}
+.conv-item-snippet {
+  font-size: 12px;
+  color: var(--cream-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+}
+.conv-item-meta {
+  font-size: 10px; letter-spacing: 0.12em;
+  color: var(--cream-faint);
+  margin-top: 6px;
+}
+
+.conv-view {
+  background: var(--navy);
+  border-left: 1px solid var(--navy-line);
+  padding: 18px 22px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.conv-empty {
+  color: var(--cream-faint);
+  font-style: italic;
+  text-align: center;
+  padding: 40px 20px;
+  font-family: 'Playfair Display', serif;
+}
+.conv-msg {
+  margin-bottom: 14px;
+  max-width: 80%;
+  padding: 11px 15px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.conv-msg.user {
+  background: var(--gold-soft);
+  color: var(--cream);
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+}
+.conv-msg.assistant {
+  background: var(--navy-panel);
+  color: var(--cream);
+  border-bottom-left-radius: 4px;
+}
+
+/* ─── TRAIN GONXHE ─────────────────────────────────────────── */
+.prompt-textarea {
+  width: 100%;
+  min-height: 60vh;
+  background: var(--navy);
+  border: 1px solid var(--navy-line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--cream);
+  outline: none;
+  resize: vertical;
+}
+.prompt-textarea:focus { border-color: rgba(196,169,106,0.35); }
+.prompt-meta {
+  font-size: 11px;
+  color: var(--cream-faint);
+  margin-top: 6px;
+  letter-spacing: 0.04em;
+}
+
+/* ─── SETTINGS ─────────────────────────────────────────────── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.setting-row {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--navy-line);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px;
+  gap: 12px;
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-row .label { color: var(--cream-soft); }
+.setting-row .value { color: var(--cream); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+.toast {
+  position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--navy-elev);
+  color: var(--cream);
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(196,169,106,0.25);
+  font-size: 12.5px;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.toast.success { border-color: rgba(111,170,142,0.5); }
+.toast.error { border-color: rgba(178,106,106,0.5); }
+
+.refresh-spinner {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(196,169,106,0.3);
+  border-top-color: var(--gold);
+  animation: spin 0.8s linear infinite;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 600px) {
+  .topbar { padding: 10px 14px; }
+  .brand-name { font-size: 16px; }
+  .panels { padding: 16px; }
+  .panel-title { font-size: 22px; }
+  .kpi-value { font-size: 28px; }
+  .tab { padding: 10px 12px; font-size: 10px; }
+  .feed-row { grid-template-columns: 80px 1fr; }
+  .feed-row .room { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOCK SCREEN ───────────────────────────────────────────── -->
+<div class="lock-screen" id="lockScreen">
+  <form class="lock-card" onsubmit="return tryUnlock(event)">
+    <div class="lock-emblem">F</div>
+    <div class="lock-title">Flower CRM</div>
+    <div class="lock-sub">Staff Dashboard</div>
+    <input type="password" class="lock-input" id="lockInput" placeholder="Password" autocomplete="current-password" autofocus />
+    <button class="lock-btn" type="submit">Unlock</button>
+    <div class="lock-error" id="lockError"></div>
+  </form>
+</div>
+
+<!-- APP ───────────────────────────────────────────────────── -->
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-emblem">F</div>
+      <div class="brand-text">
+        <div class="brand-name">Flower <em style="font-style:italic; color:var(--gold);">CRM</em></div>
+        <div class="brand-sub">Staff Dashboard · Live</div>
+      </div>
+    </div>
+    <div class="status">
+      <span><span class="status-dot"></span> <span id="statusText">Connected</span></span>
+      <span class="status-tag" id="lastUpdated">—</span>
+      <button class="logout-btn" onclick="logout()">Lock</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-panel="guests" onclick="showTab('guests')">Guest Database <span class="tab-badge" id="badge-guests">0</span></button>
+    <button class="tab" data-panel="midstay" onclick="showTab('midstay')">Mid-Stay Queue <span class="tab-badge" id="badge-midstay">0</span></button>
+    <button class="tab" data-panel="activity" onclick="showTab('activity')">Activity Feed <span class="tab-badge" id="badge-activity">0</span></button>
+    <button class="tab" data-panel="analytics" onclick="showTab('analytics')">Analytics</button>
+    <button class="tab" data-panel="conversations" onclick="showTab('conversations')">Conversations <span class="tab-badge" id="badge-conversations">0</span></button>
+    <button class="tab" data-panel="train" onclick="showTab('train')">Train Gonxhe</button>
+    <button class="tab" data-panel="settings" onclick="showTab('settings')">Settings</button>
+  </div>
+
+  <div class="panels">
+
+    <!-- GUEST DATABASE ────────────────────────────────────── -->
+    <section class="panel active" id="panel-guests">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Guest <em>Database</em></div>
+          <div class="panel-sub">Everyone who has registered through the guest page</div>
+        </div>
+        <div class="panel-actions">
+          <input class="search-input" id="guestSearch" placeholder="Search name, room, phone…" oninput="renderGuests()" />
+          <button class="btn" onclick="exportGuestsCSV()">Export CSV</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="tbl" id="guestsTable">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Guest</th>
+                <th>Phone</th>
+                <th>Stay</th>
+                <th>Mid-Stay</th>
+                <th>Status</th>
+                <th>Registered</th>
+              </tr>
+            </thead>
+            <tbody id="guestsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- MID-STAY QUEUE ────────────────────────────────────── -->
+    <section class="panel" id="panel-midstay">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Mid-Stay <em>Queue</em></div>
+          <div class="panel-sub">Guests at the halfway point of their stay — perfect moment to check in</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tbl-wrap">
+          <table class="tbl" id="midstayTable">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Guest</th>
+                <th>Mid-Stay Date</th>
+                <th>Days In</th>
+                <th>Days Left</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="midstayBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACTIVITY FEED ─────────────────────────────────────── -->
+    <section class="panel" id="panel-activity">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Activity <em>Feed</em></div>
+          <div class="panel-sub">Live stream of everything happening across the guest page</div>
+        </div>
+        <div class="panel-actions">
+          <select class="search-input" id="activityFilter" onchange="renderActivity()" style="min-width:160px;">
+            <option value="">All event types</option>
+            <option value="guest_registered">Registrations</option>
+            <option value="service_request">Service requests</option>
+            <option value="book_table">Table bookings</option>
+            <option value="gonxhe_opened">Gonxhe opens</option>
+            <option value="feedback">Feedback</option>
+            <option value="wifi_copied">Wi-Fi copies</option>
+            <option value="view_menu">Menu views</option>
+            <option value="social_click">Social clicks</option>
+          </select>
+        </div>
+      </div>
+      <div class="card">
+        <div id="activityFeed"></div>
+      </div>
+    </section>
+
+    <!-- ANALYTICS ─────────────────────────────────────────── -->
+    <section class="panel" id="panel-analytics">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Analytics <em>at a glance</em></div>
+          <div class="panel-sub">Yesterday vs. today, what guests are using most</div>
+        </div>
+      </div>
+      <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="card card-pad">
+        <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:14px;">Top Event Types (last 7 days)</div>
+        <div id="topEvents"></div>
+      </div>
+      <div class="card card-pad" style="margin-top:14px;">
+        <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:14px;">Feedback Distribution</div>
+        <div id="feedbackDist"></div>
+      </div>
+    </section>
+
+    <!-- CONVERSATIONS ─────────────────────────────────────── -->
+    <section class="panel" id="panel-conversations">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Gonxhe <em>Conversations</em></div>
+          <div class="panel-sub">Every chat between guests and the AI concierge</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="conv-grid">
+          <div class="conv-list" id="convList"></div>
+          <div class="conv-view" id="convView">
+            <div class="conv-empty">Select a conversation to read the transcript</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRAIN GONXHE ──────────────────────────────────────── -->
+    <section class="panel" id="panel-train">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Train <em>Gonxhe</em></div>
+          <div class="panel-sub">Edit the AI concierge's system prompt — changes apply immediately to all guests</div>
+        </div>
+        <div class="panel-actions">
+          <button class="btn" onclick="reloadPrompt()">Reload</button>
+          <button class="btn danger" onclick="resetPrompt()">Reset to Default</button>
+          <button class="btn primary" onclick="savePrompt()">Save</button>
+        </div>
+      </div>
+      <div class="card card-pad">
+        <textarea class="prompt-textarea" id="promptTextarea" placeholder="System prompt will load here…"></textarea>
+        <div class="prompt-meta" id="promptMeta">—</div>
+      </div>
+    </section>
+
+    <!-- SETTINGS ──────────────────────────────────────────── -->
+    <section class="panel" id="panel-settings">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title"><em>Settings</em></div>
+          <div class="panel-sub">Dashboard config and quick links</div>
+        </div>
+      </div>
+      <div class="settings-grid">
+        <div class="card">
+          <div class="setting-row"><span class="label">Auto-refresh interval</span>
+            <select class="search-input" id="refreshInterval" onchange="setRefreshInterval(this.value)" style="min-width:140px;">
+              <option value="3000">3 seconds</option>
+              <option value="5000" selected>5 seconds</option>
+              <option value="15000">15 seconds</option>
+              <option value="60000">1 minute</option>
+              <option value="0">Off (manual)</option>
+            </select>
+          </div>
+          <div class="setting-row"><span class="label">Guest page</span><a class="value" style="color:var(--gold); text-decoration:none;" href="/" target="_blank">/ ↗</a></div>
+          <div class="setting-row"><span class="label">FLOW dashboard</span><a class="value" style="color:var(--gold); text-decoration:none;" href="https://flower-dashboard.onrender.com" target="_blank">flower-dashboard.onrender.com ↗</a></div>
+          <div class="setting-row"><span class="label">Health</span><span class="value" id="healthValue">—</span></div>
+        </div>
+        <div class="card">
+          <div class="setting-row"><span class="label">Total guests registered</span><span class="value" id="stat-guests">—</span></div>
+          <div class="setting-row"><span class="label">Total events logged</span><span class="value" id="stat-events">—</span></div>
+          <div class="setting-row"><span class="label">Total Gonxhe sessions</span><span class="value" id="stat-conversations">—</span></div>
+          <div class="setting-row"><span class="label">Feedback responses</span><span class="value" id="stat-feedback">—</span></div>
+        </div>
+        <div class="card">
+          <div class="setting-row"><span class="label">Manual refresh</span><button class="btn primary" onclick="refreshAll()">Refresh Now</button></div>
+          <div class="setting-row"><span class="label">Export everything</span><button class="btn" onclick="exportAll()">Download JSON</button></div>
+          <div class="setting-row"><span class="label">Sign out</span><button class="btn danger" onclick="logout()">Lock dashboard</button></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═════════════════════════════════════════════════════════════
+   FLOWER CRM — STAFF DASHBOARD
+   ═════════════════════════════════════════════════════════════ */
+
+let PASSWORD = '';
+let refreshTimer = null;
+let refreshIntervalMs = 5000;
+let state = {
+  guests: [],
+  events: [],
+  feedback: [],
+  conversations: [],
+  activeConvId: null,
+  promptOnDisk: '',
+  health: '—',
+};
+
+/* ─── LOCK / AUTH ─────────────────────────────────────────── */
+async function tryUnlock(e) {
+  e.preventDefault();
+  const pwd = document.getElementById('lockInput').value;
+  document.getElementById('lockError').textContent = '';
+  try {
+    const r = await fetch('/api/dashboard-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      PASSWORD = pwd;
+      sessionStorage.setItem('fh_dash_pwd', pwd);
+      document.getElementById('lockScreen').classList.add('hidden');
+      await refreshAll();
+      startRefreshLoop();
+    } else {
+      document.getElementById('lockError').textContent = 'Incorrect password.';
+    }
+  } catch (err) {
+    document.getElementById('lockError').textContent = 'Connection error. Try again.';
+  }
+  return false;
+}
+
+function logout() {
+  PASSWORD = '';
+  sessionStorage.removeItem('fh_dash_pwd');
+  stopRefreshLoop();
+  document.getElementById('lockScreen').classList.remove('hidden');
+  document.getElementById('lockInput').value = '';
+  setTimeout(() => document.getElementById('lockInput').focus(), 100);
+}
+
+/* ─── API HELPERS ─────────────────────────────────────────── */
+async function apiGet(path) {
+  const r = await fetch(path, { headers: { 'X-Dashboard-Password': PASSWORD } });
+  if (r.status === 401) { logout(); throw new Error('auth'); }
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Dashboard-Password': PASSWORD },
+    body: JSON.stringify(body || {}),
+  });
+  if (r.status === 401) { logout(); throw new Error('auth'); }
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+/* ─── DATA LOADING ────────────────────────────────────────── */
+async function refreshAll() {
+  document.getElementById('statusText').textContent = 'Refreshing…';
+  try {
+    const [g, e, f, c, h] = await Promise.all([
+      apiGet('/api/guests'),
+      apiGet('/api/events?limit=2000'),
+      apiGet('/api/feedback'),
+      apiGet('/api/conversations'),
+      fetch('/healthz').then(r => r.ok ? 'OK' : 'down').catch(() => 'down'),
+    ]);
+    state.guests = g.guests || [];
+    state.events = e.events || [];
+    state.feedback = f.feedback || [];
+    state.conversations = c.conversations || [];
+    state.health = h;
+    renderAll();
+    document.getElementById('statusText').textContent = 'Connected';
+    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    document.getElementById('statusText').textContent = 'Disconnected';
+    document.getElementById('lastUpdated').textContent = 'Error';
+  }
+}
+
+function startRefreshLoop() {
+  stopRefreshLoop();
+  if (refreshIntervalMs > 0) {
+    refreshTimer = setInterval(refreshAll, refreshIntervalMs);
+  }
+}
+function stopRefreshLoop() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+function setRefreshInterval(ms) {
+  refreshIntervalMs = parseInt(ms, 10);
+  startRefreshLoop();
+  toast('Auto-refresh: ' + (refreshIntervalMs === 0 ? 'off' : (refreshIntervalMs / 1000) + 's'));
+}
+
+/* ─── RENDER ──────────────────────────────────────────────── */
+function renderAll() {
+  renderGuests();
+  renderMidStay();
+  renderActivity();
+  renderAnalytics();
+  renderConversations();
+  renderSettings();
+  updateBadges();
+}
+
+function updateBadges() {
+  document.getElementById('badge-guests').textContent = state.guests.length;
+  document.getElementById('badge-activity').textContent = state.events.length;
+  document.getElementById('badge-conversations').textContent = state.conversations.length;
+  document.getElementById('badge-midstay').textContent = midStayCount();
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  try {
+    const d = new Date(s);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  } catch { return s; }
+}
+function fmtDateTime(s) {
+  if (!s) return '—';
+  try {
+    const d = new Date(s);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return diffMin + 'm ago';
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return diffHr + 'h ago';
+    return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch { return s; }
+}
+function daysBetween(a, b) {
+  if (!a || !b) return null;
+  return Math.round((new Date(b) - new Date(a)) / (1000 * 60 * 60 * 24));
+}
+function stayStatus(g) {
+  if (!g.checkin || !g.checkout) return { label: 'No dates', cls: 'muted' };
+  const now = new Date();
+  const ci = new Date(g.checkin);
+  const co = new Date(g.checkout);
+  if (now < ci) return { label: 'Upcoming', cls: 'gold' };
+  if (now > co) return { label: 'Departed', cls: 'muted' };
+  return { label: 'In-house', cls: 'green' };
+}
+
+/* ─── GUESTS TAB ──────────────────────────────────────────── */
+function renderGuests() {
+  const q = (document.getElementById('guestSearch').value || '').toLowerCase().trim();
+  const tbody = document.getElementById('guestsBody');
+  let rows = state.guests.slice();
+  if (q) {
+    rows = rows.filter(g =>
+      (g.name || '').toLowerCase().includes(q) ||
+      (g.room || '').toLowerCase().includes(q) ||
+      (g.phone || '').toLowerCase().includes(q)
+    );
+  }
+  rows.sort((a, b) => (a.registeredAt < b.registeredAt ? 1 : -1));
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="tbl-empty">No guests registered yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(g => {
+    const st = stayStatus(g);
+    return `<tr>
+      <td><span class="tbl-room">${escapeHtml(g.room || '—')}</span></td>
+      <td><div class="tbl-name">${escapeHtml(g.name || '—')}</div></td>
+      <td><div class="tbl-meta">${escapeHtml(g.phone || '—')}</div></td>
+      <td><div class="tbl-meta">${fmtDate(g.checkin)} → ${fmtDate(g.checkout)}</div></td>
+      <td><div class="tbl-meta">${fmtDate(g.midStay)}</div></td>
+      <td><span class="pill ${st.cls}">${st.label}</span></td>
+      <td><div class="tbl-ts">${fmtDateTime(g.registeredAt)}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+function exportGuestsCSV() {
+  if (!state.guests.length) { toast('No guests to export', 'error'); return; }
+  const headers = ['room','name','phone','checkin','checkout','midStay','registeredAt'];
+  const rows = [headers.join(',')].concat(state.guests.map(g =>
+    headers.map(h => csvCell(g[h])).join(',')
+  ));
+  download('flower-guests-' + dateStamp() + '.csv', rows.join('\n'), 'text/csv');
+}
+
+/* ─── MID-STAY QUEUE ──────────────────────────────────────── */
+function midStayList() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return state.guests
+    .filter(g => g.midStay)
+    .map(g => {
+      const mid = new Date(g.midStay);
+      const ci = g.checkin ? new Date(g.checkin) : null;
+      const co = g.checkout ? new Date(g.checkout) : null;
+      const daysSinceMid = Math.round((today - mid) / 86400000);
+      return { g, mid, ci, co, daysSinceMid };
+    })
+    .filter(x => x.daysSinceMid >= -1 && x.daysSinceMid <= 1 && x.co && x.co >= today)
+    .sort((a, b) => a.mid - b.mid);
+}
+function midStayCount() { return midStayList().length; }
+function renderMidStay() {
+  const tbody = document.getElementById('midstayBody');
+  const list = midStayList();
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="tbl-empty">No one in the mid-stay window today</td></tr>';
+    return;
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  tbody.innerHTML = list.map(({ g, mid, ci, co }) => {
+    const daysIn = ci ? Math.max(0, Math.round((today - ci) / 86400000)) : '—';
+    const daysLeft = co ? Math.max(0, Math.round((co - today) / 86400000)) : '—';
+    const waLink = g.phone ? `https://wa.me/${(g.phone || '').replace(/[^0-9]/g,'')}?text=${encodeURIComponent('Hello ' + g.name + ', this is reception at Flower Hotels & Resorts. How is your stay going so far?')}` : null;
+    return `<tr>
+      <td><span class="tbl-room">${escapeHtml(g.room || '—')}</span></td>
+      <td><div class="tbl-name">${escapeHtml(g.name || '—')}</div><div class="tbl-meta">${escapeHtml(g.phone || '')}</div></td>
+      <td><div class="tbl-meta">${fmtDate(mid)}</div></td>
+      <td>${daysIn}</td>
+      <td>${daysLeft}</td>
+      <td>${waLink ? `<a class="btn primary" href="${waLink}" target="_blank">WhatsApp</a>` : '<span class="pill muted">No phone</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ─── ACTIVITY FEED ───────────────────────────────────────── */
+function renderActivity() {
+  const filter = document.getElementById('activityFilter').value;
+  const feed = document.getElementById('activityFeed');
+  let rows = state.events.slice();
+  if (filter) rows = rows.filter(e => e.type === filter);
+  rows.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  rows = rows.slice(0, 300);
+  if (rows.length === 0) {
+    feed.innerHTML = '<div class="tbl-empty">No activity yet</div>';
+    return;
+  }
+  feed.innerHTML = rows.map(e => `
+    <div class="feed-row">
+      <div class="ts">${fmtDateTime(e.ts)}</div>
+      <div class="room">${escapeHtml(e.room || '—')}</div>
+      <div class="meta"><span class="type">${escapeHtml(e.type)}</span>${e.detail ? '<span>' + escapeHtml(e.detail) + '</span>' : ''}${e.guest ? '<span class="guest">· ' + escapeHtml(e.guest) + '</span>' : ''}</div>
+    </div>
+  `).join('');
+}
+
+/* ─── ANALYTICS ───────────────────────────────────────────── */
+function renderAnalytics() {
+  const now = new Date();
+  const startToday = new Date(now); startToday.setHours(0,0,0,0);
+  const start7d = new Date(now.getTime() - 7 * 86400000);
+
+  const todayEvents = state.events.filter(e => new Date(e.ts) >= startToday);
+  const today = (type) => todayEvents.filter(e => e.type === type).length;
+
+  const inHouse = state.guests.filter(g => {
+    if (!g.checkin || !g.checkout) return false;
+    const ci = new Date(g.checkin), co = new Date(g.checkout);
+    return now >= ci && now <= co;
+  }).length;
+
+  const ratings = state.feedback.map(f => f.rating).filter(r => r > 0);
+  const avgRating = ratings.length ? (ratings.reduce((a,b)=>a+b,0) / ratings.length).toFixed(1) : '—';
+
+  const kpis = [
+    { label: 'In-house now', value: inHouse, meta: state.guests.length + ' total in DB', cls: 'gold' },
+    { label: 'Registrations today', value: today('guest_registered'), meta: '' },
+    { label: 'Gonxhe sessions today', value: today('gonxhe_opened'), meta: state.conversations.length + ' transcripts on record' },
+    { label: 'Service requests today', value: today('service_request'), meta: '' },
+    { label: 'Feedback ratings', value: state.feedback.length, meta: 'Average ' + avgRating + ' / 5', cls: 'green' },
+    { label: 'Activity events today', value: todayEvents.length, meta: state.events.length + ' total' },
+  ];
+  document.getElementById('kpiGrid').innerHTML = kpis.map(k => `
+    <div class="kpi ${k.cls || ''}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-meta">${k.meta || '&nbsp;'}</div>
+    </div>
+  `).join('');
+
+  const recent7 = state.events.filter(e => new Date(e.ts) >= start7d);
+  const counts = {};
+  recent7.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const max = sorted.length ? sorted[0][1] : 1;
+  document.getElementById('topEvents').innerHTML = sorted.length === 0
+    ? '<div class="tbl-empty">No events in the last 7 days</div>'
+    : sorted.map(([type, n]) => `
+        <div style="display:flex; align-items:center; gap:12px; padding:7px 0;">
+          <div style="flex: 0 0 180px; font-size:12px; color:var(--cream); font-weight:500;">${escapeHtml(type)}</div>
+          <div style="flex:1; height:8px; background:rgba(196,169,106,0.10); border-radius:999px; overflow:hidden;">
+            <div style="height:100%; width:${(n / max) * 100}%; background:linear-gradient(90deg, var(--gold-deep), var(--gold));"></div>
+          </div>
+          <div style="flex: 0 0 50px; text-align:right; font-family:'Playfair Display',serif; font-style:italic; color:var(--gold); font-size:16px;">${n}</div>
+        </div>
+      `).join('');
+
+  const dist = [5,4,3,2,1].map(r => ({ r, n: state.feedback.filter(f => f.rating === r).length }));
+  const totalRatings = dist.reduce((s,x) => s + x.n, 0);
+  document.getElementById('feedbackDist').innerHTML = totalRatings === 0
+    ? '<div class="tbl-empty">No feedback yet</div>'
+    : dist.map(({r, n}) => `
+        <div style="display:flex; align-items:center; gap:12px; padding:6px 0;">
+          <div style="flex: 0 0 80px; font-family:'Playfair Display',serif; font-style:italic; color:var(--gold); font-size:14px;">${r} ★</div>
+          <div style="flex:1; height:8px; background:rgba(196,169,106,0.10); border-radius:999px; overflow:hidden;">
+            <div style="height:100%; width:${totalRatings ? (n / totalRatings) * 100 : 0}%; background:${r >= 4 ? 'var(--green)' : r >= 3 ? 'var(--gold)' : 'var(--red)'};"></div>
+          </div>
+          <div style="flex: 0 0 50px; text-align:right; color:var(--cream); font-size:13px;">${n}</div>
+        </div>
+      `).join('');
+}
+
+/* ─── CONVERSATIONS ───────────────────────────────────────── */
+function renderConversations() {
+  const list = document.getElementById('convList');
+  const convs = state.conversations.slice();
+  if (convs.length === 0) {
+    list.innerHTML = '<div class="conv-empty">No Gonxhe chats yet</div>';
+    document.getElementById('convView').innerHTML = '<div class="conv-empty">Select a conversation to read the transcript</div>';
+    return;
+  }
+  list.innerHTML = convs.map(c => {
+    const last = c.messages && c.messages.length ? c.messages[c.messages.length - 1] : null;
+    const snippet = last ? last.content.slice(0, 140) : '';
+    return `<div class="conv-item ${state.activeConvId === c.sessionId ? 'active' : ''}" onclick="selectConv('${c.sessionId}')">
+      <div class="conv-item-head">
+        <div class="who"><em>${escapeHtml(c.room || '—')}</em> ${escapeHtml(c.guest || 'Guest')}</div>
+        <div class="tbl-ts">${fmtDateTime(c.updatedAt)}</div>
+      </div>
+      <div class="conv-item-snippet">${escapeHtml(snippet)}</div>
+      <div class="conv-item-meta">${(c.messages || []).length} message${(c.messages || []).length === 1 ? '' : 's'}</div>
+    </div>`;
+  }).join('');
+  if (state.activeConvId) renderConvView();
+}
+function selectConv(id) {
+  state.activeConvId = id;
+  renderConversations();
+}
+function renderConvView() {
+  const conv = state.conversations.find(c => c.sessionId === state.activeConvId);
+  const view = document.getElementById('convView');
+  if (!conv) {
+    view.innerHTML = '<div class="conv-empty">Conversation not found</div>';
+    return;
+  }
+  view.innerHTML = (conv.messages || []).map(m => `
+    <div class="conv-msg ${m.role}">${escapeHtml(m.content)}</div>
+  `).join('') || '<div class="conv-empty">No messages</div>';
+}
+
+/* ─── TRAIN GONXHE ────────────────────────────────────────── */
+async function reloadPrompt() {
+  try {
+    const data = await apiGet('/api/system-prompt');
+    state.promptOnDisk = data.prompt || '';
+    document.getElementById('promptTextarea').value = state.promptOnDisk;
+    updatePromptMeta();
+    toast('Prompt loaded');
+  } catch (err) { toast('Failed to load prompt', 'error'); }
+}
+function updatePromptMeta() {
+  const text = document.getElementById('promptTextarea').value;
+  document.getElementById('promptMeta').textContent =
+    text.length.toLocaleString() + ' characters · ' +
+    text.split('\n').length + ' lines · ' +
+    Math.ceil(text.length / 4).toLocaleString() + ' tokens (approx)';
+}
+async function savePrompt() {
+  const text = document.getElementById('promptTextarea').value;
+  if (text.length < 20) { toast('Prompt is too short', 'error'); return; }
+  try {
+    await apiPost('/api/system-prompt', { prompt: text });
+    state.promptOnDisk = text;
+    toast('Prompt saved — applies to next chat turn', 'success');
+  } catch (err) { toast('Save failed', 'error'); }
+}
+async function resetPrompt() {
+  if (!confirm('Reset the Gonxhe system prompt to the default shipped in code?')) return;
+  try {
+    const data = await apiPost('/api/system-prompt/reset', {});
+    state.promptOnDisk = data.prompt || '';
+    document.getElementById('promptTextarea').value = state.promptOnDisk;
+    updatePromptMeta();
+    toast('Reset to default', 'success');
+  } catch (err) { toast('Reset failed', 'error'); }
+}
+
+/* ─── SETTINGS ────────────────────────────────────────────── */
+function renderSettings() {
+  document.getElementById('stat-guests').textContent = state.guests.length;
+  document.getElementById('stat-events').textContent = state.events.length;
+  document.getElementById('stat-conversations').textContent = state.conversations.length;
+  document.getElementById('stat-feedback').textContent = state.feedback.length;
+  document.getElementById('healthValue').textContent = state.health;
+}
+
+function exportAll() {
+  const blob = {
+    exportedAt: new Date().toISOString(),
+    guests: state.guests,
+    events: state.events,
+    feedback: state.feedback,
+    conversations: state.conversations,
+  };
+  download('flower-crm-export-' + dateStamp() + '.json', JSON.stringify(blob, null, 2), 'application/json');
+}
+
+/* ─── HELPERS ─────────────────────────────────────────────── */
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+function dateStamp() {
+  const d = new Date();
+  return d.toISOString().split('T')[0];
+}
+function download(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function toast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast visible' + (kind ? ' ' + kind : '');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.panel === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (name === 'train' && !document.getElementById('promptTextarea').value) reloadPrompt();
+}
+
+document.getElementById('promptTextarea').addEventListener('input', updatePromptMeta);
+
+/* ─── BOOT ────────────────────────────────────────────────── */
+(function boot() {
+  const saved = sessionStorage.getItem('fh_dash_pwd');
+  if (saved) {
+    PASSWORD = saved;
+    fetch('/api/dashboard-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: saved }),
+    }).then(r => r.json()).then(data => {
+      if (data.ok) {
+        document.getElementById('lockScreen').classList.add('hidden');
+        refreshAll();
+        startRefreshLoop();
+      } else {
+        logout();
+      }
+    }).catch(() => logout());
+  }
+})();
+</script>
+</body>
+</html>
