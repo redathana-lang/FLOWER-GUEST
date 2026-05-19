@@ -1,0 +1,14 @@
+perf: optimize property map for mobile (2.3 MB to 50-200 KB)
+
+Replaced the 2.3 MB PNG with optimized variants generated from the
+same source: WebP at 800/1200/1672 widths (51/112/198 KB) and JPEG
+at 800/1672 widths (66/261 KB) as the fallback. Switched the markup
+to a picture element with srcset and sizes so each device only loads
+the variant it needs. The full-size link target stays as the largest
+JPEG so opening in a new tab works in any browser.
+
+Mobile gets the 51 KB WebP, desktop gets the 198 KB WebP, ancient
+browsers get the JPEG fallback. ~92% bandwidth reduction on modern
+clients.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
