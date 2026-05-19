@@ -1061,6 +1061,8 @@ section { padding: 14px 18px; }
   cursor: pointer; transition: border-color 0.15s ease;
 }
 .info-row:hover, .info-row:active { border-color: rgba(196,169,106,0.5); }
+.info-row-static { cursor: default; }
+.info-row-static:hover, .info-row-static:active { border-color: var(--navy-line); }
 .info-row-label {
   font-family: 'Playfair Display', serif; font-style: italic;
   font-size: 15px; color: var(--cream);
@@ -1955,16 +1957,16 @@ function showInfoSheet(title, subtitle, rows) {
   document.getElementById('infoSubtitle').textContent = subtitle || '';
   const wrap = document.getElementById('infoRows');
   wrap.innerHTML = rows.map(r => {
+    const actionHTML = r.action ? `<div class="info-row-action">${r.action}</div>` : '';
+    const body = `<div><div class="info-row-label">${r.label}</div>${actionHTML}</div>
+        <div class="info-row-value">${r.value}</div>`;
     if (r.href) {
-      return `<a class="info-row" href="${r.href}" onclick="${r.onclick || ''}">
-        <div><div class="info-row-label">${r.label}</div><div class="info-row-action">${r.action || ''}</div></div>
-        <div class="info-row-value">${r.value}</div>
-      </a>`;
+      return `<a class="info-row" href="${r.href}" onclick="${r.onclick || ''}">${body}</a>`;
     }
-    return `<div class="info-row" onclick="${r.onclick || ''}">
-      <div><div class="info-row-label">${r.label}</div><div class="info-row-action">${r.action || ''}</div></div>
-      <div class="info-row-value">${r.value}</div>
-    </div>`;
+    if (r.static) {
+      return `<div class="info-row info-row-static">${body}</div>`;
+    }
+    return `<div class="info-row" onclick="${r.onclick || ''}">${body}</div>`;
   }).join('');
   document.getElementById('infoSheet').classList.add('visible');
   document.body.style.overflow = 'hidden';
@@ -1976,12 +1978,10 @@ function closeInfoSheet() {
 
 function showReceptionInfo() {
   logActivity('open_reception_info');
-  showInfoSheet('Reception', 'Tap to call', RECEPTION_PHONES.map(p => ({
+  showInfoSheet('Reception', 'Dial from the room phone', RECEPTION_PHONES.map(p => ({
     label: p.label,
     value: p.number,
-    href: 'tel:' + p.number,
-    action: 'Tap to call',
-    onclick: `logActivity('call_reception_${p.number}')`,
+    static: true,
   })));
 }
 
