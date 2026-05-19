@@ -685,6 +685,7 @@ table.tbl {
               <tr>
                 <th>Room</th>
                 <th>Guest</th>
+                <th>Nationality</th>
                 <th>Phone</th>
                 <th>Stay</th>
                 <th>Mid-Stay</th>
@@ -812,7 +813,7 @@ table.tbl {
 
       <div class="card">
         <div class="setting-row" style="border-bottom:none; padding:6px 0;">
-          <span class="label">Upload an Excel file with columns: <em style="color:var(--gold); font-style:normal;">Name, Email</em>, and optionally <em style="color:var(--gold); font-style:normal;">Phone, Language, Tags</em> (tags comma-separated). Existing contacts with the same email are merged (tags accumulate).</span>
+          <span class="label">Upload an Excel file with columns: <em style="color:var(--gold); font-style:normal;">Name, Email</em>, and optionally <em style="color:var(--gold); font-style:normal;">Phone, Language, Country, Tags</em> (Country can be a name like "Italy" or an ISO code like "IT"; tags comma-separated). Existing contacts with the same email are merged (tags accumulate).</span>
         </div>
         <div class="setting-row" style="border-bottom:none; padding-top:14px;">
           <input type="file" id="contactsFile" accept=".xlsx,.xls" style="color:var(--cream-soft); font-size:13px;" />
@@ -930,6 +931,13 @@ table.tbl {
         <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:14px;">Feedback Distribution</div>
         <div id="feedbackDist"></div>
       </div>
+      <div class="card card-pad" style="margin-top:14px;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px;">
+          <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600;">Guests by Nationality</div>
+          <div style="font-size:11px; color:var(--cream-faint);" id="guestsByCountryMeta">—</div>
+        </div>
+        <div id="guestsByCountry"></div>
+      </div>
     </section>
 
     <!-- CONVERSATIONS ─────────────────────────────────────── -->
@@ -1024,6 +1032,69 @@ table.tbl {
 let PASSWORD = '';
 let refreshTimer = null;
 let refreshIntervalMs = 5000;
+
+// ─── Country reference (mirrors the guest page list) ──────────────
+const COUNTRY_CODES = [
+  ['AL','Albania','+355'],['AD','Andorra','+376'],['AE','United Arab Emirates','+971'],['AF','Afghanistan','+93'],
+  ['AG','Antigua and Barbuda','+1268'],['AM','Armenia','+374'],['AO','Angola','+244'],['AR','Argentina','+54'],
+  ['AT','Austria','+43'],['AU','Australia','+61'],['AZ','Azerbaijan','+994'],['BA','Bosnia and Herzegovina','+387'],
+  ['BB','Barbados','+1246'],['BD','Bangladesh','+880'],['BE','Belgium','+32'],['BF','Burkina Faso','+226'],
+  ['BG','Bulgaria','+359'],['BH','Bahrain','+973'],['BI','Burundi','+257'],['BJ','Benin','+229'],
+  ['BN','Brunei','+673'],['BO','Bolivia','+591'],['BR','Brazil','+55'],['BS','Bahamas','+1242'],
+  ['BT','Bhutan','+975'],['BW','Botswana','+267'],['BY','Belarus','+375'],['BZ','Belize','+501'],
+  ['CA','Canada','+1'],['CD','DR Congo','+243'],['CF','Central African Republic','+236'],['CG','Congo','+242'],
+  ['CH','Switzerland','+41'],['CI','Côte d\'Ivoire','+225'],['CL','Chile','+56'],['CM','Cameroon','+237'],
+  ['CN','China','+86'],['CO','Colombia','+57'],['CR','Costa Rica','+506'],['CU','Cuba','+53'],
+  ['CV','Cape Verde','+238'],['CY','Cyprus','+357'],['CZ','Czech Republic','+420'],['DE','Germany','+49'],
+  ['DJ','Djibouti','+253'],['DK','Denmark','+45'],['DM','Dominica','+1767'],['DO','Dominican Republic','+1809'],
+  ['DZ','Algeria','+213'],['EC','Ecuador','+593'],['EE','Estonia','+372'],['EG','Egypt','+20'],
+  ['ER','Eritrea','+291'],['ES','Spain','+34'],['ET','Ethiopia','+251'],['FI','Finland','+358'],
+  ['FJ','Fiji','+679'],['FR','France','+33'],['GA','Gabon','+241'],['GB','United Kingdom','+44'],
+  ['GD','Grenada','+1473'],['GE','Georgia','+995'],['GH','Ghana','+233'],['GM','Gambia','+220'],
+  ['GN','Guinea','+224'],['GQ','Equatorial Guinea','+240'],['GR','Greece','+30'],['GT','Guatemala','+502'],
+  ['GW','Guinea-Bissau','+245'],['GY','Guyana','+592'],['HK','Hong Kong','+852'],['HN','Honduras','+504'],
+  ['HR','Croatia','+385'],['HT','Haiti','+509'],['HU','Hungary','+36'],['ID','Indonesia','+62'],
+  ['IE','Ireland','+353'],['IL','Israel','+972'],['IN','India','+91'],['IQ','Iraq','+964'],
+  ['IR','Iran','+98'],['IS','Iceland','+354'],['IT','Italy','+39'],['JM','Jamaica','+1876'],
+  ['JO','Jordan','+962'],['JP','Japan','+81'],['KE','Kenya','+254'],['KG','Kyrgyzstan','+996'],
+  ['KH','Cambodia','+855'],['KM','Comoros','+269'],['KN','Saint Kitts and Nevis','+1869'],['KP','North Korea','+850'],
+  ['KR','South Korea','+82'],['KW','Kuwait','+965'],['KZ','Kazakhstan','+7'],['LA','Laos','+856'],
+  ['LB','Lebanon','+961'],['LC','Saint Lucia','+1758'],['LI','Liechtenstein','+423'],['LK','Sri Lanka','+94'],
+  ['LR','Liberia','+231'],['LS','Lesotho','+266'],['LT','Lithuania','+370'],['LU','Luxembourg','+352'],
+  ['LV','Latvia','+371'],['LY','Libya','+218'],['MA','Morocco','+212'],['MC','Monaco','+377'],
+  ['MD','Moldova','+373'],['ME','Montenegro','+382'],['MG','Madagascar','+261'],['MK','North Macedonia','+389'],
+  ['ML','Mali','+223'],['MM','Myanmar','+95'],['MN','Mongolia','+976'],['MO','Macau','+853'],
+  ['MR','Mauritania','+222'],['MT','Malta','+356'],['MU','Mauritius','+230'],['MV','Maldives','+960'],
+  ['MW','Malawi','+265'],['MX','Mexico','+52'],['MY','Malaysia','+60'],['MZ','Mozambique','+258'],
+  ['NA','Namibia','+264'],['NE','Niger','+227'],['NG','Nigeria','+234'],['NI','Nicaragua','+505'],
+  ['NL','Netherlands','+31'],['NO','Norway','+47'],['NP','Nepal','+977'],['NZ','New Zealand','+64'],
+  ['OM','Oman','+968'],['PA','Panama','+507'],['PE','Peru','+51'],['PG','Papua New Guinea','+675'],
+  ['PH','Philippines','+63'],['PK','Pakistan','+92'],['PL','Poland','+48'],['PS','Palestine','+970'],
+  ['PT','Portugal','+351'],['PY','Paraguay','+595'],['QA','Qatar','+974'],['RO','Romania','+40'],
+  ['RS','Serbia','+381'],['RU','Russia','+7'],['RW','Rwanda','+250'],['SA','Saudi Arabia','+966'],
+  ['SC','Seychelles','+248'],['SD','Sudan','+249'],['SE','Sweden','+46'],['SG','Singapore','+65'],
+  ['SI','Slovenia','+386'],['SK','Slovakia','+421'],['SL','Sierra Leone','+232'],['SM','San Marino','+378'],
+  ['SN','Senegal','+221'],['SO','Somalia','+252'],['SR','Suriname','+597'],['SS','South Sudan','+211'],
+  ['ST','São Tomé and Príncipe','+239'],['SV','El Salvador','+503'],['SY','Syria','+963'],['SZ','Eswatini','+268'],
+  ['TD','Chad','+235'],['TG','Togo','+228'],['TH','Thailand','+66'],['TJ','Tajikistan','+992'],
+  ['TL','Timor-Leste','+670'],['TM','Turkmenistan','+993'],['TN','Tunisia','+216'],['TR','Turkey','+90'],
+  ['TT','Trinidad and Tobago','+1868'],['TW','Taiwan','+886'],['TZ','Tanzania','+255'],['UA','Ukraine','+380'],
+  ['UG','Uganda','+256'],['US','United States','+1'],['UY','Uruguay','+598'],['UZ','Uzbekistan','+998'],
+  ['VA','Vatican City','+379'],['VC','Saint Vincent','+1784'],['VE','Venezuela','+58'],['VN','Vietnam','+84'],
+  ['XK','Kosovo','+383'],['YE','Yemen','+967'],['ZA','South Africa','+27'],['ZM','Zambia','+260'],
+  ['ZW','Zimbabwe','+263'],
+];
+const ISO_TO_NAME = Object.fromEntries(COUNTRY_CODES.map(([iso, name]) => [iso, name]));
+function isoToFlag(iso) {
+  if (!iso || iso.length !== 2) return '🏳️';
+  return String.fromCodePoint(...iso.toUpperCase().split('').map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+function countryLabel(iso) {
+  if (!iso) return '';
+  const name = ISO_TO_NAME[iso] || iso;
+  return `${isoToFlag(iso)} ${name}`;
+}
+
 let state = {
   guests: [],
   events: [],
@@ -1198,14 +1269,18 @@ function renderGuests() {
   }
   rows.sort((a, b) => (a.registeredAt < b.registeredAt ? 1 : -1));
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="tbl-empty">No guests registered yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="tbl-empty">No guests registered yet</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(g => {
     const st = stayStatus(g);
+    const natCell = g.country
+      ? `<span title="${escapeHtml(ISO_TO_NAME[g.country] || g.country)}" style="font-size:14px;">${isoToFlag(g.country)}</span> <span class="tbl-meta" style="display:inline-block;vertical-align:middle;">${escapeHtml(g.country)}</span>`
+      : '<span class="tbl-meta">—</span>';
     return `<tr>
       <td><span class="tbl-room">${escapeHtml(g.room || '—')}</span></td>
       <td><div class="tbl-name">${escapeHtml(g.name || '—')}</div></td>
+      <td>${natCell}</td>
       <td><div class="tbl-meta">${escapeHtml(g.phone || '—')}</div></td>
       <td><div class="tbl-meta">${fmtDate(g.checkin)} → ${fmtDate(g.checkout)}</div></td>
       <td><div class="tbl-meta">${fmtDate(g.midStay)}</div></td>
@@ -1346,6 +1421,37 @@ function renderAnalytics() {
             <div style="height:100%; width:${totalRatings ? (n / totalRatings) * 100 : 0}%; background:${r >= 4 ? 'var(--green)' : r >= 3 ? 'var(--gold)' : 'var(--red)'};"></div>
           </div>
           <div style="flex: 0 0 50px; text-align:right; color:var(--cream); font-size:13px;">${n}</div>
+        </div>
+      `).join('');
+
+  // Guests by Nationality — bar chart of country counts, plus a separate
+  // count of guests registered before the country field existed.
+  const countryCounts = {};
+  let missing = 0;
+  state.guests.forEach(g => {
+    if (g.country) countryCounts[g.country] = (countryCounts[g.country] || 0) + 1;
+    else missing += 1;
+  });
+  const countrySorted = Object.entries(countryCounts).sort((a, b) => b[1] - a[1]);
+  const countryMax = countrySorted.length ? countrySorted[0][1] : 1;
+  const countryTotal = countrySorted.reduce((s, [,n]) => s + n, 0);
+  document.getElementById('guestsByCountryMeta').textContent =
+    countrySorted.length
+      ? countrySorted.length + ' countries · ' + countryTotal + ' guests' + (missing ? ' · ' + missing + ' without country' : '')
+      : missing ? missing + ' guests registered before nationality was captured' : '';
+  document.getElementById('guestsByCountry').innerHTML = countrySorted.length === 0
+    ? '<div class="tbl-empty">No nationality data yet — newer registrations include this field.</div>'
+    : countrySorted.map(([iso, n]) => `
+        <div style="display:flex; align-items:center; gap:12px; padding:7px 0;">
+          <div style="flex: 0 0 200px; font-size:13px; color:var(--cream); font-weight:500;">
+            <span style="font-size:16px;">${isoToFlag(iso)}</span>
+            <span style="margin-left:8px;">${escapeHtml(ISO_TO_NAME[iso] || iso)}</span>
+            <span style="margin-left:6px;color:var(--cream-faint);font-size:11px;">${escapeHtml(iso)}</span>
+          </div>
+          <div style="flex:1; height:8px; background:rgba(196,169,106,0.10); border-radius:999px; overflow:hidden;">
+            <div style="height:100%; width:${(n / countryMax) * 100}%; background:linear-gradient(90deg, var(--gold-deep), var(--gold));"></div>
+          </div>
+          <div style="flex: 0 0 50px; text-align:right; font-family:'Playfair Display',serif; font-style:italic; color:var(--gold); font-size:16px;">${n}</div>
         </div>
       `).join('');
 }
@@ -1714,16 +1820,20 @@ async function loadContacts() {
     const data = await apiGet('/api/contacts?includeUnsubscribed=1');
     contactsState.all = data.contacts || [];
     contactsState.tags = data.tags || [];
+    contactsState.countries = data.countries || [];
     contactsState.active = data.active || 0;
     contactsState.unsubscribed = data.unsubscribed || 0;
     document.getElementById('badge-contacts').textContent = contactsState.active;
     document.getElementById('contactsStats').textContent =
       contactsState.active + ' active · ' + contactsState.unsubscribed + ' unsubscribed';
-    // Rebuild tag dropdown.
+    // Rebuild the filter dropdown with both tag and country options.
     const sel = document.getElementById('campFilter');
     const prev = sel.value;
-    sel.innerHTML = '<option value="">All active contacts</option>'
-      + contactsState.tags.map(t => `<option value="tag:${escapeAttr(t)}">Tag: ${escapeText(t)}</option>`).join('');
+    const tagOpts = contactsState.tags
+      .map(t => `<option value="tag:${escapeAttr(t)}">Tag · ${escapeText(t)}</option>`);
+    const countryOpts = contactsState.countries
+      .map(iso => `<option value="country:${escapeAttr(iso)}">Country · ${isoToFlag(iso)} ${escapeText(ISO_TO_NAME[iso] || iso)}</option>`);
+    sel.innerHTML = '<option value="">All active contacts</option>' + tagOpts.join('') + countryOpts.join('');
     sel.value = prev;
     updateCampRecipientsCount();
     renderContactsTable();
@@ -1752,8 +1862,11 @@ function renderContactsTable() {
       ? '<span style="color:#B26A6A;">unsubscribed</span>'
       : '<span style="color:#6FAA8E;">active</span>';
     const tags = (c.tags || []).map(t => `<span style="display:inline-block;padding:2px 8px;background:rgba(196,169,106,0.12);color:var(--gold);border-radius:10px;font-size:11px;margin-right:4px;">${escapeText(t)}</span>`).join('');
+    const flag = c.country
+      ? `<span title="${escapeText(ISO_TO_NAME[c.country] || c.country)}" style="font-size:14px;margin-right:6px;">${isoToFlag(c.country)}</span>`
+      : '';
     return `<tr>
-      <td>${escapeText(c.name || '—')}</td>
+      <td>${flag}${escapeText(c.name || '—')}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${escapeText(c.email)}</td>
       <td>${escapeText(c.phone || '—')}</td>
       <td>${tags || '—'}</td>
@@ -1862,6 +1975,9 @@ function updateCampRecipientsCount() {
   else if (v.startsWith('tag:')) {
     const tag = v.slice(4).toLowerCase();
     n = active.filter(c => (c.tags || []).some(t => t.toLowerCase() === tag)).length;
+  } else if (v.startsWith('country:')) {
+    const iso = v.slice(8).toUpperCase();
+    n = active.filter(c => (c.country || '').toUpperCase() === iso).length;
   } else { n = active.length; }
   document.getElementById('campRecipientsCount').textContent = '→ ' + n + ' recipient' + (n === 1 ? '' : 's');
 }
@@ -1892,6 +2008,7 @@ async function sendCampaign(testMode) {
   if (attachSel && attachSel.value) body.attachmentUrl = attachSel.value;
   if (testMode) body.testTo = testTo;
   else if (filterVal && filterVal.startsWith('tag:')) body.filter = { tag: filterVal.slice(4) };
+  else if (filterVal && filterVal.startsWith('country:')) body.filter = { country: filterVal.slice(8) };
 
   result.style.display = 'none';
   toast(testMode ? 'Sending test…' : 'Sending campaign…');

@@ -423,7 +423,41 @@ function canonicalField(header) {
   if (['phone', 'mobile', 'tel', 'telephone', 'whatsapp', 'telefon', 'celular'].includes(k)) return 'phone';
   if (['language', 'lang', 'gjuha'].includes(k)) return 'language';
   if (['tags', 'tag', 'segment', 'segments', 'group'].includes(k)) return 'tags';
+  if (['country', 'nationality', 'shteti', 'kombesia'].includes(k)) return 'country';
   return null;
+}
+
+// Map common country names → ISO-3166 alpha-2 codes so the spreadsheet can
+// carry either "Italy", "IT" or "italia" and we still normalize correctly.
+const COUNTRY_NAME_TO_ISO = {
+  'albania':'AL','shqipëria':'AL','shqiperia':'AL','italy':'IT','italia':'IT',
+  'germany':'DE','deutschland':'DE','gjermania':'DE','france':'FR','francë':'FR','franca':'FR',
+  'spain':'ES','españa':'ES','espana':'ES','spanja':'ES','greece':'GR','greqia':'GR',
+  'united kingdom':'GB','uk':'GB','britain':'GB','great britain':'GB','england':'GB','angli':'GB','anglia':'GB',
+  'united states':'US','usa':'US','u.s.a.':'US','u.s.':'US','america':'US','sh.b.a.':'US','shba':'US',
+  'austria':'AT','switzerland':'CH','zvicra':'CH','netherlands':'NL','holland':'NL','holanda':'NL',
+  'belgium':'BE','belgjika':'BE','portugal':'PT','ireland':'IE','irlanda':'IE',
+  'poland':'PL','czech republic':'CZ','czechia':'CZ','slovakia':'SK','slovenia':'SI','hungary':'HU',
+  'romania':'RO','rumania':'RO','bulgaria':'BG','serbia':'RS','serbi':'RS','serbia and montenegro':'RS',
+  'kosovo':'XK','kosova':'XK','kosovë':'XK','north macedonia':'MK','macedonia':'MK','maqedonia':'MK',
+  'montenegro':'ME','mali i zi':'ME','bosnia':'BA','bosnia and herzegovina':'BA',
+  'croatia':'HR','kroacia':'HR','turkey':'TR','türkiye':'TR','turqia':'TR',
+  'russia':'RU','rusia':'RU','ukraine':'UA','ukraina':'UA','belarus':'BY',
+  'denmark':'DK','sweden':'SE','suedia':'SE','norway':'NO','norvegjia':'NO','finland':'FI','finlanda':'FI',
+  'iceland':'IS','islanda':'IS','luxembourg':'LU','liechtenstein':'LI','monaco':'MC','san marino':'SM',
+  'canada':'CA','kanadaja':'CA','australia':'AU','australi':'AU','new zealand':'NZ',
+  'china':'CN','kina':'CN','japan':'JP','japonia':'JP','south korea':'KR','korea':'KR',
+  'india':'IN','indi':'IN','indonesia':'ID','thailand':'TH','vietnam':'VN','philippines':'PH','singapore':'SG',
+  'uae':'AE','united arab emirates':'AE','saudi arabia':'SA','israel':'IL','izraeli':'IL',
+  'egypt':'EG','egjipti':'EG','morocco':'MA','tunisia':'TN','south africa':'ZA',
+  'brazil':'BR','argentina':'AR','mexico':'MX','meksika':'MX','chile':'CL','peru':'PE','colombia':'CO',
+};
+
+function normalizeCountry(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return '';
+  if (/^[A-Z]{2}$/i.test(v)) return v.toUpperCase();
+  return COUNTRY_NAME_TO_ISO[v.toLowerCase()] || '';
 }
 
 function parseXlsxBuffer(buf) {
@@ -522,13 +556,15 @@ app.post('/api/contacts/import', requireDashboardAuth, contactsUpload.single('fi
   const errors = [];
 
   for (const [rowIndex, row] of rows.entries()) {
-    const obj = { name: '', email: '', phone: '', language: '', tags: [] };
+    const obj = { name: '', email: '', phone: '', language: '', tags: [], country: '' };
     for (const [rawHeader, value] of Object.entries(row)) {
       const field = headerMap[rawHeader];
       if (!field) continue;
       if (field === 'tags') {
         obj.tags = String(value || '')
           .split(/[,;|]/).map(s => s.trim()).filter(Boolean);
+      } else if (field === 'country') {
+        obj.country = normalizeCountry(value);
       } else {
         obj[field] = String(value || '').trim();
       }
@@ -544,6 +580,7 @@ app.post('/api/contacts/import', requireDashboardAuth, contactsUpload.single('fi
       cur.name = obj.name || cur.name;
       cur.phone = obj.phone || cur.phone;
       cur.language = obj.language || cur.language;
+      cur.country = obj.country || cur.country || '';
       cur.tags = Array.from(new Set([...(cur.tags || []), ...obj.tags]));
       cur.updatedAt = now;
       updated += 1;
@@ -554,6 +591,7 @@ app.post('/api/contacts/import', requireDashboardAuth, contactsUpload.single('fi
         email,
         phone: obj.phone,
         language: obj.language,
+        country: obj.country,
         tags: obj.tags,
         importedAt: now,
         updatedAt: now,
@@ -585,6 +623,7 @@ app.get('/api/contacts', requireDashboardAuth, (req, res) => {
     active: all.filter(c => !c.unsubscribedAt).length,
     unsubscribed: all.filter(c => c.unsubscribedAt).length,
     tags: Array.from(new Set(all.flatMap(c => c.tags || []))).sort(),
+    countries: Array.from(new Set(all.map(c => c.country).filter(Boolean))).sort(),
   });
 });
 
@@ -628,9 +667,12 @@ app.post('/api/contacts/send', requireDashboardAuth, async (req, res) => {
   } else {
     const all = readContacts().filter(c => !c.unsubscribedAt);
     const tag = (filter && filter.tag) ? String(filter.tag).trim().toLowerCase() : null;
-    recipients = tag
-      ? all.filter(c => (c.tags || []).some(t => t.toLowerCase() === tag))
-      : all;
+    const country = (filter && filter.country) ? String(filter.country).trim().toUpperCase() : null;
+    recipients = all.filter(c => {
+      if (tag && !((c.tags || []).some(t => t.toLowerCase() === tag))) return false;
+      if (country && (c.country || '').toUpperCase() !== country) return false;
+      return true;
+    });
   }
   if (recipients.length === 0) {
     return res.status(422).json({ error: 'no_recipients' });
