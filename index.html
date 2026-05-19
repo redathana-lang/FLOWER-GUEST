@@ -1168,9 +1168,20 @@ section { padding: 14px 18px; }
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════
-     RESORT MAP — temporarily removed; new version coming from user.
-     Restore between this block and the DINING section below.
+     PROPERTY MAP
 ═══════════════════════════════════════════════════════════════ -->
+<section class="fade-in">
+  <div class="section-eyebrow">Find Your Way</div>
+  <h2 class="section-title">Guest Experience <em>Map</em></h2>
+  <p class="section-lede">Three places, one experience — the Flower Building, the Flower Garden Building, and the Flower Lounge on the private beach. Tap the map to open it full-size.</p>
+
+  <a href="/property-map.png" target="_blank" rel="noopener" onclick="logActivity('open_property_map')"
+     style="display:block; background:var(--navy-panel); border:1px solid var(--navy-line); border-radius:14px; overflow:hidden; position:relative;">
+    <div style="position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg, transparent, var(--gold), transparent); opacity:0.4; z-index:1;"></div>
+    <img src="/property-map.png" alt="Guest Experience Map of Flower Hotels & Resorts — Flower Building, Flower Garden Building, and Flower Lounge on the beach"
+         style="display:block; width:100%; height:auto;" loading="lazy" />
+  </a>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════════
      DINING
