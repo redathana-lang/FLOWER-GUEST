@@ -379,6 +379,322 @@ app.post('/api/system-prompt/import', requireDashboardAuth, upload.single('file'
   }
 });
 
+// ─── CONTACTS + EMAIL CAMPAIGNS ──────────────────────────────────────────
+// Mailing list stored at /data/contacts.json. Excel import expects columns:
+// Name (required), Email (required), Phone, Language, Tags (comma-separated).
+// Sends go through Gmail SMTP via nodemailer, with an HMAC-signed unsubscribe
+// link in every email's footer.
+
+const nodemailer = require('nodemailer');
+const XLSX = require('xlsx');
+
+const CONTACTS_FILE = 'contacts.json';
+
+function normalizeEmail(e) {
+  return String(e || '').trim().toLowerCase();
+}
+
+function readContacts() {
+  return readJSON(CONTACTS_FILE, []);
+}
+
+function writeContacts(list) {
+  writeJSON(CONTACTS_FILE, list);
+}
+
+// Map common header variants to our canonical field names.
+function canonicalField(header) {
+  const k = String(header || '').trim().toLowerCase();
+  if (['name', 'full name', 'fullname', 'guest', 'guest name', 'emri'].includes(k)) return 'name';
+  if (['email', 'e-mail', 'mail', 'email address', 'emaili'].includes(k)) return 'email';
+  if (['phone', 'mobile', 'tel', 'telephone', 'whatsapp', 'telefon', 'celular'].includes(k)) return 'phone';
+  if (['language', 'lang', 'gjuha'].includes(k)) return 'language';
+  if (['tags', 'tag', 'segment', 'segments', 'group'].includes(k)) return 'tags';
+  return null;
+}
+
+function parseXlsxBuffer(buf) {
+  const wb = XLSX.read(buf, { type: 'buffer' });
+  const firstSheet = wb.SheetNames[0];
+  if (!firstSheet) return { rows: [], headers: [] };
+  const ws = wb.Sheets[firstSheet];
+  const json = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+  return { rows: json, sheet: firstSheet, sheetCount: wb.SheetNames.length };
+}
+
+function signUnsubToken(id) {
+  const secret = process.env.UNSUB_SECRET || process.env.DASHBOARD_PASSWORD || 'flower-fallback-secret';
+  return crypto.createHmac('sha256', secret).update(String(id)).digest('hex').slice(0, 24);
+}
+function verifyUnsubToken(id, token) {
+  return signUnsubToken(id) === String(token || '');
+}
+
+// Lazy transporter — built only when SMTP_USER/SMTP_PASS are configured.
+function getMailTransporter() {
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  if (!user || !pass) return null;
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
+}
+
+function brandedEmailHTML({ bodyHTML, unsubscribeURL }) {
+  const safeBody = String(bodyHTML || '');
+  return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flower Hotels &amp; Resorts</title></head>
+<body style="margin:0; background:#0E1A2E; font-family:Georgia, 'Playfair Display', serif; color:#E8D9B5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0E1A2E; padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; background:#142540; border:1px solid rgba(196,169,106,0.25); border-radius:14px; overflow:hidden;">
+        <tr><td style="padding:28px 32px; border-bottom:1px solid rgba(196,169,106,0.2); text-align:center;">
+          <div style="font-family:'Playfair Display', Georgia, serif; font-style:italic; font-size:24px; color:#C4A96A; letter-spacing:1px;">Flower Hotels &amp; Resorts</div>
+          <div style="font-size:11px; color:#9C8550; letter-spacing:3px; text-transform:uppercase; margin-top:6px;">Golem · Albanian Adriatic</div>
+        </td></tr>
+        <tr><td style="padding:32px; font-family:Georgia, serif; font-size:15px; line-height:1.65; color:#E8D9B5;">
+          ${safeBody}
+        </td></tr>
+        <tr><td style="padding:20px 32px; border-top:1px solid rgba(196,169,106,0.2); background:#0E1A2E; text-align:center; font-size:11px; color:#9C8550; line-height:1.6;">
+          Rruga Ahmet Caci, Golem, Durrës, Albania<br/>
+          <a href="https://hotel-flower.com" style="color:#C4A96A; text-decoration:none;">hotel-flower.com</a> · <a href="https://wa.me/355692073380" style="color:#C4A96A; text-decoration:none;">WhatsApp Reception</a><br/><br/>
+          <a href="${unsubscribeURL}" style="color:#9C8550; text-decoration:underline;">Unsubscribe from these emails</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+const contactsUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+});
+
+app.post('/api/contacts/import', requireDashboardAuth, contactsUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  let parsed;
+  try {
+    parsed = parseXlsxBuffer(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: 'xlsx_parse_failed', detail: String(err.message || err) });
+  }
+  const rows = parsed.rows || [];
+  if (rows.length === 0) {
+    return res.status(422).json({ error: 'empty_sheet', sheet: parsed.sheet });
+  }
+  // Map raw headers to canonical fields.
+  const sampleRow = rows[0];
+  const headerMap = {};
+  for (const h of Object.keys(sampleRow)) {
+    const f = canonicalField(h);
+    if (f) headerMap[h] = f;
+  }
+  const hasEmailColumn = Object.values(headerMap).includes('email');
+  if (!hasEmailColumn) {
+    return res.status(422).json({
+      error: 'no_email_column',
+      hint: 'Spreadsheet must contain a column named "Email" (or "E-mail", "Mail").',
+      detected: Object.keys(sampleRow),
+    });
+  }
+
+  const existing = readContacts();
+  const byEmail = new Map(existing.map(c => [normalizeEmail(c.email), c]));
+  const now = new Date().toISOString();
+  let added = 0, updated = 0, skipped = 0;
+  const errors = [];
+
+  for (const [rowIndex, row] of rows.entries()) {
+    const obj = { name: '', email: '', phone: '', language: '', tags: [] };
+    for (const [rawHeader, value] of Object.entries(row)) {
+      const field = headerMap[rawHeader];
+      if (!field) continue;
+      if (field === 'tags') {
+        obj.tags = String(value || '')
+          .split(/[,;|]/).map(s => s.trim()).filter(Boolean);
+      } else {
+        obj[field] = String(value || '').trim();
+      }
+    }
+    const email = normalizeEmail(obj.email);
+    if (!email || !email.includes('@') || !email.includes('.')) {
+      skipped += 1;
+      if (errors.length < 20) errors.push({ row: rowIndex + 2, reason: 'invalid_email', email: obj.email });
+      continue;
+    }
+    if (byEmail.has(email)) {
+      const cur = byEmail.get(email);
+      cur.name = obj.name || cur.name;
+      cur.phone = obj.phone || cur.phone;
+      cur.language = obj.language || cur.language;
+      cur.tags = Array.from(new Set([...(cur.tags || []), ...obj.tags]));
+      cur.updatedAt = now;
+      updated += 1;
+    } else {
+      const item = {
+        id: crypto.randomUUID(),
+        name: obj.name,
+        email,
+        phone: obj.phone,
+        language: obj.language,
+        tags: obj.tags,
+        importedAt: now,
+        updatedAt: now,
+        unsubscribedAt: null,
+      };
+      existing.push(item);
+      byEmail.set(email, item);
+      added += 1;
+    }
+  }
+  writeContacts(existing);
+  res.json({
+    ok: true,
+    sheet: parsed.sheet,
+    rowsScanned: rows.length,
+    added, updated, skipped,
+    total: existing.length,
+    errors,
+  });
+});
+
+app.get('/api/contacts', requireDashboardAuth, (req, res) => {
+  const all = readContacts();
+  const includeUnsub = req.query.includeUnsubscribed === '1';
+  const filtered = includeUnsub ? all : all.filter(c => !c.unsubscribedAt);
+  res.json({
+    contacts: filtered,
+    total: all.length,
+    active: all.filter(c => !c.unsubscribedAt).length,
+    unsubscribed: all.filter(c => c.unsubscribedAt).length,
+    tags: Array.from(new Set(all.flatMap(c => c.tags || []))).sort(),
+  });
+});
+
+app.delete('/api/contacts/:id', requireDashboardAuth, (req, res) => {
+  const id = req.params.id;
+  const list = readContacts();
+  const idx = list.findIndex(c => c.id === id);
+  if (idx < 0) return res.status(404).json({ error: 'not_found' });
+  list.splice(idx, 1);
+  writeContacts(list);
+  res.json({ ok: true, total: list.length });
+});
+
+app.post('/api/contacts/send', requireDashboardAuth, async (req, res) => {
+  const { subject, html, filter, testTo, throttleMs } = req.body || {};
+  if (!subject || String(subject).trim().length === 0) {
+    return res.status(400).json({ error: 'subject required' });
+  }
+  if (!html || String(html).trim().length === 0) {
+    return res.status(400).json({ error: 'html body required' });
+  }
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    return res.status(503).json({ error: 'smtp_not_configured', hint: 'Set SMTP_USER and SMTP_PASS on Render.' });
+  }
+  const fromName = process.env.EMAIL_FROM_NAME || 'Flower Hotels & Resorts';
+  const fromEmail = process.env.SMTP_USER;
+  const fromHeader = `"${fromName.replace(/"/g, '')}" <${fromEmail}>`;
+  const baseURL = process.env.PUBLIC_URL || `https://${req.get('host') || 'flower-guest.onrender.com'}`;
+
+  // Build recipient list.
+  let recipients;
+  if (testTo) {
+    recipients = [{
+      id: 'test',
+      name: 'Test Recipient',
+      email: normalizeEmail(testTo),
+      language: '',
+      tags: [],
+    }];
+  } else {
+    const all = readContacts().filter(c => !c.unsubscribedAt);
+    const tag = (filter && filter.tag) ? String(filter.tag).trim().toLowerCase() : null;
+    recipients = tag
+      ? all.filter(c => (c.tags || []).some(t => t.toLowerCase() === tag))
+      : all;
+  }
+  if (recipients.length === 0) {
+    return res.status(422).json({ error: 'no_recipients' });
+  }
+  const cap = testTo ? 1 : Math.min(recipients.length, 200);
+  recipients = recipients.slice(0, cap);
+
+  const delay = Math.max(0, Math.min(5000, Number(throttleMs) || 700));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  let sent = 0, failed = 0;
+  const failures = [];
+  for (const c of recipients) {
+    try {
+      const token = signUnsubToken(c.id);
+      const unsubURL = `${baseURL}/unsubscribe?id=${encodeURIComponent(c.id)}&t=${token}`;
+      const finalHTML = brandedEmailHTML({ bodyHTML: html, unsubscribeURL: unsubURL });
+      await transporter.sendMail({
+        from: fromHeader,
+        to: c.email,
+        subject,
+        html: finalHTML,
+        headers: {
+          'List-Unsubscribe': `<${unsubURL}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      });
+      sent += 1;
+    } catch (err) {
+      failed += 1;
+      if (failures.length < 20) failures.push({ email: c.email, error: String(err.message || err) });
+    }
+    if (delay > 0 && c !== recipients[recipients.length - 1]) await sleep(delay);
+  }
+  res.json({ ok: true, sent, failed, total: recipients.length, failures, testMode: !!testTo });
+});
+
+// Public unsubscribe — must be GET so it works from any mail client.
+app.get('/unsubscribe', (req, res) => {
+  const id = String(req.query.id || '');
+  const token = String(req.query.t || '');
+  if (!id || !verifyUnsubToken(id, token)) {
+    return res.status(400).send('<p style="font-family:Georgia,serif;padding:32px;">Invalid unsubscribe link.</p>');
+  }
+  const list = readContacts();
+  const c = list.find(x => x.id === id);
+  if (!c) {
+    return res.status(404).send('<p style="font-family:Georgia,serif;padding:32px;">Contact not found.</p>');
+  }
+  if (!c.unsubscribedAt) {
+    c.unsubscribedAt = new Date().toISOString();
+    writeContacts(list);
+  }
+  res.send(`<!doctype html><html><body style="margin:0;background:#0E1A2E;color:#E8D9B5;font-family:Georgia,serif;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;">
+    <div style="padding:48px; max-width:520px;">
+      <div style="font-style:italic; font-size:28px; color:#C4A96A; margin-bottom:16px;">Flower Hotels &amp; Resorts</div>
+      <p style="font-size:16px; line-height:1.6;">You've been unsubscribed from our emails. We're sorry to see you go.</p>
+      <p style="font-size:13px; color:#9C8550; margin-top:24px;">If this was a mistake, just reply to any past email or message reception on <a href="https://wa.me/355692073380" style="color:#C4A96A;">WhatsApp</a>.</p>
+    </div>
+  </body></html>`);
+});
+
+// Also support POST for List-Unsubscribe=One-Click (RFC 8058).
+app.post('/unsubscribe', express.urlencoded({ extended: false }), (req, res) => {
+  const id = String((req.body && req.body.id) || req.query.id || '');
+  const token = String((req.body && req.body.t) || req.query.t || '');
+  if (!id || !verifyUnsubToken(id, token)) return res.status(400).json({ error: 'invalid_token' });
+  const list = readContacts();
+  const c = list.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'not_found' });
+  if (!c.unsubscribedAt) {
+    c.unsubscribedAt = new Date().toISOString();
+    writeContacts(list);
+  }
+  res.json({ ok: true });
+});
+
 // ─── PAGES ───────────────────────────────────────────────────────────────
 const noCache = (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

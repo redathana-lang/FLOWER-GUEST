@@ -656,6 +656,7 @@ table.tbl {
     <button class="tab active" data-panel="guests" onclick="showTab('guests')">Guest Database <span class="tab-badge" id="badge-guests">0</span></button>
     <button class="tab" data-panel="midstay" onclick="showTab('midstay')">Mid-Stay Queue <span class="tab-badge" id="badge-midstay">0</span></button>
     <button class="tab" data-panel="broadcast" onclick="showTab('broadcast')">Broadcast</button>
+    <button class="tab" data-panel="contacts" onclick="showTab('contacts')">Contacts <span class="tab-badge" id="badge-contacts">0</span></button>
     <button class="tab" data-panel="activity" onclick="showTab('activity')">Activity Feed <span class="tab-badge" id="badge-activity">0</span></button>
     <button class="tab" data-panel="analytics" onclick="showTab('analytics')">Analytics</button>
     <button class="tab" data-panel="conversations" onclick="showTab('conversations')">Conversations <span class="tab-badge" id="badge-conversations">0</span></button>
@@ -791,6 +792,83 @@ table.tbl {
               </tr>
             </thead>
             <tbody id="bcBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTACTS (Email mailing list) ─────────────────────── -->
+    <section class="panel" id="panel-contacts">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Email <em>Contacts</em></div>
+          <div class="panel-sub">Import contacts from Excel and send newsletters or special offers — branded as Flower Hotels &amp; Resorts</div>
+        </div>
+        <div class="panel-actions">
+          <span class="value" id="contactsStats" style="font-size:12px;">—</span>
+          <button class="btn" onclick="loadContacts()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-row" style="border-bottom:none; padding:6px 0;">
+          <span class="label">Upload an Excel file with columns: <em style="color:var(--gold); font-style:normal;">Name, Email</em>, and optionally <em style="color:var(--gold); font-style:normal;">Phone, Language, Tags</em> (tags comma-separated). Existing contacts with the same email are merged (tags accumulate).</span>
+        </div>
+        <div class="setting-row" style="border-bottom:none; padding-top:14px;">
+          <input type="file" id="contactsFile" accept=".xlsx,.xls" style="color:var(--cream-soft); font-size:13px;" />
+          <button class="btn primary" onclick="importContacts()">Import Contacts</button>
+        </div>
+        <div id="importResult" style="margin-top:8px; font-size:12px; color:var(--cream-soft); display:none;"></div>
+      </div>
+
+      <div class="card">
+        <div class="panel-title" style="font-size:18px; margin-bottom:14px;">Compose <em>campaign</em></div>
+
+        <div class="setting-row" style="border-bottom:none; padding:6px 0;">
+          <span class="label">Subject</span>
+          <input type="text" class="search-input" id="campSubject" placeholder="Special offer just for you — Summer escape at Flower Hotels" style="flex:1; min-width:260px;" />
+        </div>
+
+        <div class="setting-row" style="border-bottom:none; padding:6px 0;">
+          <span class="label">Send to</span>
+          <select class="search-input" id="campFilter" style="min-width:200px;">
+            <option value="">All active contacts</option>
+          </select>
+          <span class="value" id="campRecipientsCount" style="font-size:12px;">—</span>
+        </div>
+
+        <div style="margin-top:12px;">
+          <span class="label" style="display:block; margin-bottom:6px;">Body (HTML or plain text — paragraphs auto-wrapped if no HTML detected)</span>
+          <textarea class="prompt-textarea" id="campBody" style="min-height:220px;" placeholder="Dear guest,&#10;&#10;We are delighted to invite you to our Dégustation evening at Flower Restaurant…&#10;&#10;Warmly,&#10;Flower Hotels &amp; Resorts"></textarea>
+        </div>
+
+        <div class="setting-row" style="border-bottom:none; padding-top:14px;">
+          <span class="label">Test send to (one address)</span>
+          <input type="email" class="search-input" id="campTestTo" placeholder="you@example.com" style="flex:1; min-width:220px;" />
+          <button class="btn" onclick="sendCampaign(true)">Send Test</button>
+          <button class="btn danger" onclick="sendCampaign(false)">Send to All</button>
+        </div>
+        <div id="campResult" style="margin-top:8px; font-size:12px; color:var(--cream-soft); display:none;"></div>
+      </div>
+
+      <div class="card">
+        <div class="panel-actions" style="justify-content:space-between; margin-bottom:10px;">
+          <div class="panel-title" style="font-size:18px;">Contact <em>list</em></div>
+          <input type="search" class="search-input" id="contactsSearch" placeholder="Search name, email, tag…" oninput="renderContactsTable()" style="min-width:240px;" />
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="tbl" id="contactsTable" style="width:100%;">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Name</th>
+                <th style="text-align:left;">Email</th>
+                <th style="text-align:left;">Phone</th>
+                <th style="text-align:left;">Tags</th>
+                <th style="text-align:left;">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="contactsBody"><tr><td colspan="6" style="text-align:center; color:var(--cream-faint); padding:20px;">No contacts yet — import an Excel above.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1604,6 +1682,183 @@ function showTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
   if (name === 'train' && !document.getElementById('promptTextarea').value) reloadPrompt();
   if (name === 'broadcast') loadAttachments();
+  if (name === 'contacts') loadContacts();
+}
+
+/* ─── CONTACTS + EMAIL CAMPAIGN ───────────────────────────── */
+let contactsState = { all: [], tags: [], active: 0, unsubscribed: 0 };
+
+async function loadContacts() {
+  try {
+    const data = await apiGet('/api/contacts?includeUnsubscribed=1');
+    contactsState.all = data.contacts || [];
+    contactsState.tags = data.tags || [];
+    contactsState.active = data.active || 0;
+    contactsState.unsubscribed = data.unsubscribed || 0;
+    document.getElementById('badge-contacts').textContent = contactsState.active;
+    document.getElementById('contactsStats').textContent =
+      contactsState.active + ' active · ' + contactsState.unsubscribed + ' unsubscribed';
+    // Rebuild tag dropdown.
+    const sel = document.getElementById('campFilter');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">All active contacts</option>'
+      + contactsState.tags.map(t => `<option value="tag:${escapeAttr(t)}">Tag: ${escapeText(t)}</option>`).join('');
+    sel.value = prev;
+    updateCampRecipientsCount();
+    renderContactsTable();
+  } catch (err) {
+    if (String(err.message) !== 'auth') toast('Failed to load contacts', 'error');
+  }
+}
+
+function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escapeText(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function renderContactsTable() {
+  const q = (document.getElementById('contactsSearch').value || '').trim().toLowerCase();
+  const tbody = document.getElementById('contactsBody');
+  const rows = contactsState.all.filter(c => {
+    if (!q) return true;
+    const hay = [c.name, c.email, c.phone, (c.tags || []).join(' ')].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--cream-faint); padding:20px;">No matches.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(c => {
+    const status = c.unsubscribedAt
+      ? '<span style="color:#B26A6A;">unsubscribed</span>'
+      : '<span style="color:#6FAA8E;">active</span>';
+    const tags = (c.tags || []).map(t => `<span style="display:inline-block;padding:2px 8px;background:rgba(196,169,106,0.12);color:var(--gold);border-radius:10px;font-size:11px;margin-right:4px;">${escapeText(t)}</span>`).join('');
+    return `<tr>
+      <td>${escapeText(c.name || '—')}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">${escapeText(c.email)}</td>
+      <td>${escapeText(c.phone || '—')}</td>
+      <td>${tags || '—'}</td>
+      <td>${status}</td>
+      <td style="text-align:right;"><button class="btn danger" onclick="deleteContact('${c.id}')" style="padding:4px 10px;font-size:11px;">Remove</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function importContacts() {
+  const fileEl = document.getElementById('contactsFile');
+  const result = document.getElementById('importResult');
+  if (!fileEl.files || fileEl.files.length === 0) {
+    toast('Choose an .xlsx file first', 'error');
+    return;
+  }
+  const file = fileEl.files[0];
+  const fd = new FormData();
+  fd.append('file', file);
+  toast('Importing ' + file.name + '…');
+  result.style.display = 'none';
+  try {
+    const r = await fetch('/api/contacts/import', {
+      method: 'POST',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+      body: fd,
+    });
+    if (r.status === 401) { logout(); return; }
+    const data = await r.json();
+    if (!r.ok) {
+      toast(data.error || 'Import failed', 'error');
+      result.style.display = 'block';
+      result.style.color = '#B26A6A';
+      result.textContent = (data.hint || data.error || 'Import failed') + (data.detected ? ' · Detected columns: ' + data.detected.join(', ') : '');
+      return;
+    }
+    toast(`Imported: ${data.added} new, ${data.updated} updated, ${data.skipped} skipped`, 'success');
+    result.style.display = 'block';
+    result.style.color = 'var(--cream-soft)';
+    result.textContent = `Sheet "${data.sheet}" · scanned ${data.rowsScanned} rows · added ${data.added}, updated ${data.updated}, skipped ${data.skipped}. Total in list: ${data.total}.`;
+    fileEl.value = '';
+    loadContacts();
+  } catch (err) {
+    toast('Import failed', 'error');
+  }
+}
+
+async function deleteContact(id) {
+  if (!confirm('Remove this contact?')) return;
+  try {
+    const r = await fetch('/api/contacts/' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+    });
+    if (r.status === 401) { logout(); return; }
+    if (!r.ok) { toast('Delete failed', 'error'); return; }
+    toast('Removed', 'success');
+    loadContacts();
+  } catch (err) { toast('Delete failed', 'error'); }
+}
+
+function updateCampRecipientsCount() {
+  const sel = document.getElementById('campFilter');
+  const v = sel.value;
+  const active = contactsState.all.filter(c => !c.unsubscribedAt);
+  let n;
+  if (!v) { n = active.length; }
+  else if (v.startsWith('tag:')) {
+    const tag = v.slice(4).toLowerCase();
+    n = active.filter(c => (c.tags || []).some(t => t.toLowerCase() === tag)).length;
+  } else { n = active.length; }
+  document.getElementById('campRecipientsCount').textContent = '→ ' + n + ' recipient' + (n === 1 ? '' : 's');
+}
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'campFilter') updateCampRecipientsCount();
+});
+
+async function sendCampaign(testMode) {
+  const subject = document.getElementById('campSubject').value.trim();
+  const bodyRaw = document.getElementById('campBody').value.trim();
+  const testTo = document.getElementById('campTestTo').value.trim();
+  const filterVal = document.getElementById('campFilter').value;
+  const result = document.getElementById('campResult');
+
+  if (!subject) { toast('Subject is required', 'error'); return; }
+  if (!bodyRaw) { toast('Body is required', 'error'); return; }
+  if (testMode && !testTo) { toast('Enter a test recipient email', 'error'); return; }
+  if (!testMode) {
+    if (!confirm('Send this email to all matching contacts? This will use your Gmail send quota.')) return;
+  }
+  // If body has no HTML tags, wrap each paragraph in <p>.
+  let html = bodyRaw;
+  if (!/<[a-z][\s\S]*>/i.test(bodyRaw)) {
+    html = bodyRaw.split(/\n{2,}/).map(p => '<p style="margin:0 0 14px 0;">' + escapeText(p).replace(/\n/g, '<br/>') + '</p>').join('');
+  }
+  const body = { subject, html };
+  if (testMode) body.testTo = testTo;
+  else if (filterVal && filterVal.startsWith('tag:')) body.filter = { tag: filterVal.slice(4) };
+
+  result.style.display = 'none';
+  toast(testMode ? 'Sending test…' : 'Sending campaign…');
+  try {
+    const data = await apiPost('/api/contacts/send', body);
+    toast(`Sent ${data.sent} · failed ${data.failed}`, data.failed ? 'error' : 'success');
+    result.style.display = 'block';
+    result.style.color = data.failed ? '#B26A6A' : 'var(--cream-soft)';
+    result.textContent = `Sent ${data.sent} of ${data.total}${data.failed ? ' · ' + data.failed + ' failed' : ''}${data.testMode ? ' (test mode)' : ''}.`
+      + (data.failures && data.failures.length ? '\n' + data.failures.map(f => f.email + ': ' + f.error).join('\n') : '');
+  } catch (err) {
+    if (String(err.message) === 'auth') return;
+    // apiPost throws on non-OK — try to read body for hint
+    try {
+      const r = await fetch('/api/contacts/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Password': PASSWORD },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      toast(data.hint || data.error || 'Send failed', 'error');
+      result.style.display = 'block';
+      result.style.color = '#B26A6A';
+      result.textContent = data.hint || data.error || 'Send failed';
+    } catch (_) {
+      toast('Send failed', 'error');
+    }
+  }
 }
 
 document.getElementById('promptTextarea').addEventListener('input', updatePromptMeta);
