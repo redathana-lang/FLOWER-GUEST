@@ -842,6 +842,18 @@ table.tbl {
           <textarea class="prompt-textarea" id="campBody" style="min-height:220px;" placeholder="Dear guest,&#10;&#10;We are delighted to invite you to our Dégustation evening at Flower Restaurant…&#10;&#10;Warmly,&#10;Flower Hotels &amp; Resorts"></textarea>
         </div>
 
+        <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-top:14px;">
+          <div style="flex:1; min-width:240px;">
+            <div style="font-size:10px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:6px;">Attachment (optional)</div>
+            <select class="search-input" id="campAttachment" style="width:100%;">
+              <option value="">— No attachment —</option>
+            </select>
+          </div>
+          <button class="btn" onclick="document.getElementById('campFile').click()">Upload PDF</button>
+          <input type="file" id="campFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="uploadCampaignAttachment(event)" />
+          <button class="btn danger" onclick="deleteSelectedCampaignAttachment()">Remove</button>
+        </div>
+
         <div class="setting-row" style="border-bottom:none; padding-top:14px;">
           <span class="label">Test send to (one address)</span>
           <input type="email" class="search-input" id="campTestTo" placeholder="you@example.com" style="flex:1; min-width:220px;" />
@@ -1495,13 +1507,19 @@ async function loadAttachments() {
   try {
     const data = await apiGet('/api/uploads');
     state.attachments = data.files || [];
-    const sel = document.getElementById('bcAttachment');
-    const current = sel.value;
-    sel.innerHTML = '<option value="">— No attachment —</option>' +
+    const optsHTML = '<option value="">— No attachment —</option>' +
       state.attachments.map(f =>
         `<option value="${escapeHtml(f.url)}">${escapeHtml(f.filename)} · ${(f.size / 1024).toFixed(0)} KB</option>`
       ).join('');
-    if (current && state.attachments.find(f => f.url === current)) sel.value = current;
+    // Populate both the Broadcast and the Email-Campaign attachment dropdowns
+    // so they share the same uploads list.
+    ['bcAttachment', 'campAttachment'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const current = sel.value;
+      sel.innerHTML = optsHTML;
+      if (current && state.attachments.find(f => f.url === current)) sel.value = current;
+    });
   } catch (_) {}
 }
 
@@ -1689,6 +1707,9 @@ function showTab(name) {
 let contactsState = { all: [], tags: [], active: 0, unsubscribed: 0 };
 
 async function loadContacts() {
+  // Refresh the shared uploads list so the campaign attachment dropdown
+  // mirrors what's on the server (also used by the Broadcast tab).
+  loadAttachments();
   try {
     const data = await apiGet('/api/contacts?includeUnsubscribed=1');
     contactsState.all = data.contacts || [];
@@ -1794,6 +1815,44 @@ async function deleteContact(id) {
   } catch (err) { toast('Delete failed', 'error'); }
 }
 
+async function uploadCampaignAttachment(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  toast('Uploading ' + file.name + '…');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const r = await fetch('/api/uploads', {
+      method: 'POST',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+      body: fd,
+    });
+    const data = await r.json();
+    if (!r.ok) { toast('Upload failed', 'error'); return; }
+    await loadAttachments();
+    document.getElementById('campAttachment').value = data.url;
+    toast('Attached ' + data.filename, 'success');
+  } catch (err) { toast('Upload failed', 'error'); }
+  finally { e.target.value = ''; }
+}
+
+async function deleteSelectedCampaignAttachment() {
+  const sel = document.getElementById('campAttachment');
+  const url = sel.value;
+  if (!url) { toast('No attachment selected', 'error'); return; }
+  const filename = url.split('/').pop();
+  if (!confirm('Delete ' + filename + ' from the server? This file may also be used in Broadcast — removing it here removes it everywhere.')) return;
+  try {
+    const r = await fetch('/api/uploads/' + encodeURIComponent(filename), {
+      method: 'DELETE',
+      headers: { 'X-Dashboard-Password': PASSWORD },
+    });
+    if (!r.ok) { toast('Delete failed', 'error'); return; }
+    await loadAttachments();
+    toast('Deleted', 'success');
+  } catch (err) { toast('Delete failed', 'error'); }
+}
+
 function updateCampRecipientsCount() {
   const sel = document.getElementById('campFilter');
   const v = sel.value;
@@ -1829,6 +1888,8 @@ async function sendCampaign(testMode) {
     html = bodyRaw.split(/\n{2,}/).map(p => '<p style="margin:0 0 14px 0;">' + escapeText(p).replace(/\n/g, '<br/>') + '</p>').join('');
   }
   const body = { subject, html };
+  const attachSel = document.getElementById('campAttachment');
+  if (attachSel && attachSel.value) body.attachmentUrl = attachSel.value;
   if (testMode) body.testTo = testTo;
   else if (filterVal && filterVal.startsWith('tag:')) body.filter = { tag: filterVal.slice(4) };
 

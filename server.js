@@ -586,7 +586,7 @@ app.delete('/api/contacts/:id', requireDashboardAuth, (req, res) => {
 });
 
 app.post('/api/contacts/send', requireDashboardAuth, async (req, res) => {
-  const { subject, html, filter, testTo, throttleMs } = req.body || {};
+  const { subject, html, filter, testTo, throttleMs, attachmentUrl } = req.body || {};
   if (!subject || String(subject).trim().length === 0) {
     return res.status(400).json({ error: 'subject required' });
   }
@@ -625,6 +625,22 @@ app.post('/api/contacts/send', requireDashboardAuth, async (req, res) => {
   const cap = testTo ? 1 : Math.min(recipients.length, 200);
   recipients = recipients.slice(0, cap);
 
+  // Resolve attachment (if any) — must be a /uploads/<file> URL pointing to
+  // an existing file on the persistent disk.
+  const attachments = [];
+  if (attachmentUrl && typeof attachmentUrl === 'string') {
+    const m = attachmentUrl.match(/^\/uploads\/(.+)$/);
+    if (!m) {
+      return res.status(400).json({ error: 'invalid_attachment_url' });
+    }
+    const safe = path.basename(m[1]);
+    const filepath = path.join(UPLOADS_DIR, safe);
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ error: 'attachment_not_found', filename: safe });
+    }
+    attachments.push({ path: filepath, filename: safe });
+  }
+
   const delay = Math.max(0, Math.min(5000, Number(throttleMs) || 700));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -640,6 +656,7 @@ app.post('/api/contacts/send', requireDashboardAuth, async (req, res) => {
         to: c.email,
         subject,
         html: finalHTML,
+        attachments,
         headers: {
           'List-Unsubscribe': `<${unsubURL}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -652,7 +669,11 @@ app.post('/api/contacts/send', requireDashboardAuth, async (req, res) => {
     }
     if (delay > 0 && c !== recipients[recipients.length - 1]) await sleep(delay);
   }
-  res.json({ ok: true, sent, failed, total: recipients.length, failures, testMode: !!testTo });
+  res.json({
+    ok: true, sent, failed, total: recipients.length, failures,
+    testMode: !!testTo,
+    attachment: attachments[0] ? attachments[0].filename : null,
+  });
 });
 
 // Public unsubscribe — must be GET so it works from any mail client.
