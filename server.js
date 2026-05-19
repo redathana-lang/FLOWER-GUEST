@@ -51,15 +51,19 @@ const SYSTEM_PROMPT_FILE = 'system-prompt.txt';
 const DEFAULT_PROMPT_PATH = path.join(__dirname, 'default-system-prompt.txt');
 
 function getSystemPrompt() {
+  // Prefer the saved override on the persistent disk, but ignore it when it's
+  // empty or implausibly short (e.g. corrupted/partial write). That keeps the
+  // dashboard's Train Gonxhe tab from ever loading a blank prompt — it'll
+  // gracefully fall back to default-system-prompt.txt instead.
   try {
-    return fs.readFileSync(path.join(DATA_DIR, SYSTEM_PROMPT_FILE), 'utf8');
-  } catch (_) {
-    try {
-      return fs.readFileSync(DEFAULT_PROMPT_PATH, 'utf8');
-    } catch (e) {
-      console.error('Default system prompt missing', e);
-      return 'You are Gonxhe, the AI Concierge for Flower Hotels & Resorts.';
-    }
+    const saved = fs.readFileSync(path.join(DATA_DIR, SYSTEM_PROMPT_FILE), 'utf8');
+    if (saved && saved.trim().length >= 20) return saved;
+  } catch (_) {}
+  try {
+    return fs.readFileSync(DEFAULT_PROMPT_PATH, 'utf8');
+  } catch (e) {
+    console.error('Default system prompt missing', e);
+    return 'You are Gonxhe, the AI Concierge for Flower Hotels & Resorts.';
   }
 }
 function setSystemPrompt(text) {
