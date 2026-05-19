@@ -177,13 +177,13 @@ app.post('/api/gonxhe', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
 
-  const { messages, system } = req.body || {};
+  const { messages } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages required' });
   }
-  const effectiveSystem = (typeof system === 'string' && system.length > 20)
-    ? system
-    : getSystemPrompt();
+  // Server is the single source of truth for the system prompt — editable from
+  // the dashboard's "Train Gonxhe" tab. The browser never controls it.
+  const effectiveSystem = getSystemPrompt();
 
   try {
     const upstream = await fetch('https://api.anthropic.com/v1/messages', {
