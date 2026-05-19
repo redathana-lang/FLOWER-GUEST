@@ -111,7 +111,7 @@ function normalizePhone(p) {
 }
 
 app.post('/api/guest', (req, res) => {
-  const { room, name, phone, checkin, checkout, midStay } = req.body || {};
+  const { room, name, phone, country, dialCode, checkin, checkout, midStay } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
   if (!phone) return res.status(400).json({ error: 'phone required' });
   const guests = readJSON('guests.json', []);
@@ -122,11 +122,20 @@ app.post('/api/guest', (req, res) => {
     g.room === roomKey && normalizePhone(g.phone) === phoneKey
   );
   const returning = existing >= 0;
+  // Country is an ISO 3166-1 alpha-2 code (e.g. "AL", "IT", "DE", or "XK" for Kosovo).
+  const safeCountry = /^[A-Z]{2}$/i.test(String(country || ''))
+    ? String(country).toUpperCase()
+    : (returning ? (guests[existing].country || '') : '');
+  const safeDial = /^\+\d{1,4}$/.test(String(dialCode || ''))
+    ? String(dialCode)
+    : (returning ? (guests[existing].dialCode || '') : '');
   const item = {
     id: returning ? guests[existing].id : crypto.randomUUID(),
     room: roomKey,
     name: String(name).slice(0, 80),
     phone: String(phone).slice(0, 40),
+    country: safeCountry,
+    dialCode: safeDial,
     checkin: checkin || '',
     checkout: checkout || '',
     midStay: midStay || '',
