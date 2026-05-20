@@ -661,6 +661,7 @@ table.tbl {
     <button class="tab" data-panel="analytics" onclick="showTab('analytics')">Analytics</button>
     <button class="tab" data-panel="conversations" onclick="showTab('conversations')">Conversations <span class="tab-badge" id="badge-conversations">0</span></button>
     <button class="tab" data-panel="train" onclick="showTab('train')">Train Gonxhe</button>
+    <button class="tab" data-panel="gonxhe-cost" onclick="showTab('gonxhe-cost')">Gonxhe Cost</button>
     <button class="tab" data-panel="settings" onclick="showTab('settings')">Settings</button>
   </div>
 
@@ -982,6 +983,43 @@ table.tbl {
       </div>
     </section>
 
+    <!-- GONXHE COST ───────────────────────────────────────── -->
+    <section class="panel" id="panel-gonxhe-cost">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Gonxhe <em>Cost</em></div>
+          <div class="panel-sub">How much the AI concierge has spent on Anthropic API calls</div>
+        </div>
+        <div class="panel-actions">
+          <button class="btn" id="gonxheCostRefresh" onclick="renderGonxheCost()" style="display:none;">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Inline lock — separate from the dashboard password -->
+      <div class="card card-pad" id="gonxheCostLock">
+        <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:8px;">Restricted</div>
+        <div style="margin-bottom:14px; color:var(--cream-soft); font-size:14px;">This section is gated by an admin password.</div>
+        <div style="display:flex; gap:10px; align-items:center; max-width:420px;">
+          <input id="gonxheCostInput" type="password" class="search-input" placeholder="Admin password" autocomplete="off" onkeydown="if(event.key==='Enter') unlockGonxheCost()" style="flex:1;" />
+          <button class="btn primary" onclick="unlockGonxheCost()">Unlock</button>
+        </div>
+        <div id="gonxheCostError" style="margin-top:10px; color:var(--red, #d36e6e); font-size:13px; min-height:18px;"></div>
+      </div>
+
+      <!-- Content (hidden until unlocked) -->
+      <div id="gonxheCostContent" style="display:none;">
+        <div class="kpi-grid" id="gonxheCostKpis"></div>
+        <div class="card card-pad" style="margin-top:14px;">
+          <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:14px;">Token breakdown — lifetime</div>
+          <div id="gonxheCostTokens"></div>
+        </div>
+        <div class="card card-pad" style="margin-top:14px;">
+          <div style="font-size:11px; letter-spacing:0.22em; text-transform:uppercase; color:var(--gold); font-weight:600; margin-bottom:10px;">Pricing reference</div>
+          <div id="gonxheCostRates" style="font-size:13px; color:var(--cream-soft); line-height:1.7;"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- SETTINGS ──────────────────────────────────────────── -->
     <section class="panel" id="panel-settings">
       <div class="panel-head">
@@ -1137,6 +1175,10 @@ async function tryUnlock(e) {
 function logout() {
   PASSWORD = '';
   sessionStorage.removeItem('fh_dash_pwd');
+  // Clearing the admin token here too — locking the dashboard locks everything.
+  ADMIN_PASSWORD_TOKEN = '';
+  sessionStorage.removeItem('fh_admin_pwd');
+  if (typeof showGonxheCostLocked === 'function') showGonxheCostLocked();
   stopRefreshLoop();
   document.getElementById('lockScreen').classList.remove('hidden');
   document.getElementById('lockInput').value = '';
@@ -1807,6 +1849,122 @@ function showTab(name) {
   if (name === 'train' && !document.getElementById('promptTextarea').value) reloadPrompt();
   if (name === 'broadcast') loadAttachments();
   if (name === 'contacts') loadContacts();
+  if (name === 'gonxhe-cost') openGonxheCost();
+}
+
+/* ─── GONXHE COST (admin-gated) ───────────────────────────── */
+let ADMIN_PASSWORD_TOKEN = '';
+
+function openGonxheCost() {
+  // If we remember an admin password from this session, try to use it silently.
+  const saved = sessionStorage.getItem('fh_admin_pwd') || '';
+  if (saved && !ADMIN_PASSWORD_TOKEN) {
+    ADMIN_PASSWORD_TOKEN = saved;
+  }
+  if (ADMIN_PASSWORD_TOKEN) {
+    showGonxheCostUnlocked();
+    renderGonxheCost();
+  } else {
+    showGonxheCostLocked();
+    setTimeout(() => document.getElementById('gonxheCostInput')?.focus(), 50);
+  }
+}
+
+function showGonxheCostLocked() {
+  document.getElementById('gonxheCostLock').style.display = '';
+  document.getElementById('gonxheCostContent').style.display = 'none';
+  document.getElementById('gonxheCostRefresh').style.display = 'none';
+}
+function showGonxheCostUnlocked() {
+  document.getElementById('gonxheCostLock').style.display = 'none';
+  document.getElementById('gonxheCostContent').style.display = '';
+  document.getElementById('gonxheCostRefresh').style.display = '';
+}
+
+async function unlockGonxheCost() {
+  const pwd = (document.getElementById('gonxheCostInput').value || '').trim();
+  const errEl = document.getElementById('gonxheCostError');
+  errEl.textContent = '';
+  if (!pwd) { errEl.textContent = 'Enter the admin password.'; return; }
+  try {
+    const r = await fetch('/api/admin-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    const data = await r.json();
+    if (!data.ok) { errEl.textContent = 'Incorrect password.'; return; }
+    ADMIN_PASSWORD_TOKEN = pwd;
+    sessionStorage.setItem('fh_admin_pwd', pwd);
+    document.getElementById('gonxheCostInput').value = '';
+    showGonxheCostUnlocked();
+    renderGonxheCost();
+  } catch (e) {
+    errEl.textContent = 'Connection error. Try again.';
+  }
+}
+
+function fmtMoney(n) {
+  if (n == null || !isFinite(n)) return '$0.00';
+  if (n < 0.01) return '$' + n.toFixed(4);
+  if (n < 1) return '$' + n.toFixed(3);
+  return '$' + n.toFixed(2);
+}
+function fmtTokens(n) {
+  n = n || 0;
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+async function renderGonxheCost() {
+  const kpis = document.getElementById('gonxheCostKpis');
+  kpis.innerHTML = '<div style="grid-column:1/-1; padding:18px; color:var(--cream-faint);">Loading…</div>';
+  try {
+    const r = await fetch('/api/gonxhe-usage', { headers: { 'X-Admin-Password': ADMIN_PASSWORD_TOKEN } });
+    if (r.status === 401) {
+      ADMIN_PASSWORD_TOKEN = '';
+      sessionStorage.removeItem('fh_admin_pwd');
+      showGonxheCostLocked();
+      document.getElementById('gonxheCostError').textContent = 'Session expired. Re-enter the password.';
+      return;
+    }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+
+    const cards = [
+      { label: 'Today',     val: fmtMoney(data.today.cost_usd),     meta: data.today.messages + ' messages · ' + fmtTokens(data.today.input + data.today.cache_read + data.today.cache_create) + ' in · ' + fmtTokens(data.today.output) + ' out' },
+      { label: 'This month',val: fmtMoney(data.month.cost_usd),    meta: data.month.messages + ' messages' },
+      { label: 'Lifetime',  val: fmtMoney(data.lifetime.cost_usd), meta: data.lifetime.messages + ' messages · ' + (data.model || 'sonnet') },
+    ];
+    kpis.innerHTML = cards.map(k => `
+      <div class="kpi">
+        <div class="kpi-label">${k.label}</div>
+        <div class="kpi-value">${k.val}</div>
+        <div class="kpi-meta">${k.meta || '&nbsp;'}</div>
+      </div>
+    `).join('');
+
+    const lt = data.lifetime;
+    document.getElementById('gonxheCostTokens').innerHTML = `
+      <div style="display:grid; grid-template-columns:1fr auto; gap:8px 24px; font-size:14px;">
+        <div style="color:var(--cream-soft);">Input tokens</div>             <div style="text-align:right; color:var(--cream);">${fmtTokens(lt.input)}</div>
+        <div style="color:var(--cream-soft);">Output tokens</div>            <div style="text-align:right; color:var(--cream);">${fmtTokens(lt.output)}</div>
+        <div style="color:var(--cream-soft);">Cache write (5-min)</div>      <div style="text-align:right; color:var(--cream);">${fmtTokens(lt.cache_create)}</div>
+        <div style="color:var(--cream-soft);">Cache read</div>               <div style="text-align:right; color:var(--cream);">${fmtTokens(lt.cache_read)}</div>
+        <div style="color:var(--gold); font-weight:600; padding-top:8px; border-top:1px solid var(--navy-line);">Total spend</div>
+        <div style="text-align:right; color:var(--gold); font-weight:600; padding-top:8px; border-top:1px solid var(--navy-line); font-family:'Playfair Display',serif; font-style:italic;">${fmtMoney(lt.cost_usd)}</div>
+      </div>
+    `;
+
+    const r$ = data.rates_per_million_usd || {};
+    document.getElementById('gonxheCostRates').innerHTML = `
+      Model: <strong style="color:var(--cream);">${data.model || '—'}</strong> · USD per million tokens<br>
+      Input $${r$.input} &nbsp;·&nbsp; Output $${r$.output} &nbsp;·&nbsp; Cache write $${r$.cache_create} &nbsp;·&nbsp; Cache read $${r$.cache_read}
+    `;
+  } catch (e) {
+    kpis.innerHTML = '<div style="grid-column:1/-1; padding:18px; color:var(--red, #d36e6e);">Failed to load: ' + (e.message || e) + '</div>';
+  }
 }
 
 /* ─── CONTACTS + EMAIL CAMPAIGN ───────────────────────────── */

@@ -88,6 +88,77 @@ function requireDashboardAuth(req, res, next) {
   next();
 }
 
+// Separate password (defaults to "Admin26") guarding the Gonxhe Cost tab —
+// the dashboard password is shared with reception, the admin password isn't.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin26';
+function requireAdminAuth(req, res, next) {
+  const provided = req.headers['x-admin-password'] || req.query.adminPassword;
+  if (provided !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  next();
+}
+
+// ─── Gonxhe usage tracking ───────────────────────────────────────────────
+// Aggregated in one small JSON file. We keep a lifetime cumulative bucket
+// (never trimmed) and a per-day bucket (last ~365 days) so the dashboard can
+// show today / this month / lifetime without scanning a full message log.
+const GONXHE_USAGE_FILE = 'gonxhe-usage.json';
+
+// Anthropic Sonnet 4.x list price, USD per million tokens. Update here if
+// the active model (GONXHE_MODEL) or pricing tier changes.
+const GONXHE_RATES_PER_MILLION = {
+  input: 3,
+  output: 15,
+  cache_create: 3.75, // 5-minute ephemeral cache write
+  cache_read: 0.30,
+};
+
+function zeroUsageBucket() {
+  return { input: 0, output: 0, cache_create: 0, cache_read: 0, messages: 0 };
+}
+
+function recordGonxheUsage(usage) {
+  if (!usage || typeof usage !== 'object') return;
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+  const data = readJSON(GONXHE_USAGE_FILE, { lifetime: zeroUsageBucket(), byDay: {} });
+  if (!data.lifetime) data.lifetime = zeroUsageBucket();
+  if (!data.byDay) data.byDay = {};
+  if (!data.byDay[today]) data.byDay[today] = zeroUsageBucket();
+
+  const inputTokens = usage.input_tokens || 0;
+  const outputTokens = usage.output_tokens || 0;
+  const cacheCreate = usage.cache_creation_input_tokens || 0;
+  const cacheRead = usage.cache_read_input_tokens || 0;
+
+  for (const bucket of [data.lifetime, data.byDay[today]]) {
+    bucket.input += inputTokens;
+    bucket.output += outputTokens;
+    bucket.cache_create += cacheCreate;
+    bucket.cache_read += cacheRead;
+    bucket.messages += 1;
+  }
+
+  // Trim byDay to the last 365 entries — keeps the file small forever.
+  const days = Object.keys(data.byDay).sort();
+  while (days.length > 365) {
+    delete data.byDay[days.shift()];
+  }
+
+  writeJSON(GONXHE_USAGE_FILE, data);
+}
+
+function computeGonxheCost(bucket) {
+  if (!bucket) return 0;
+  const r = GONXHE_RATES_PER_MILLION;
+  return (
+    (bucket.input || 0) * r.input +
+    (bucket.output || 0) * r.output +
+    (bucket.cache_create || 0) * r.cache_create +
+    (bucket.cache_read || 0) * r.cache_read
+  ) / 1_000_000;
+}
+
 // ─── PUBLIC WRITE ENDPOINTS (guest page → server) ────────────────────────
 
 app.post('/api/event', (req, res) => {
@@ -218,6 +289,9 @@ app.post('/api/gonxhe', async (req, res) => {
       console.error('Anthropic upstream error', upstream.status, data);
       return res.status(upstream.status).json({ error: 'upstream', detail: data });
     }
+    // Persist usage for the Gonxhe Cost dashboard. Failures here must never
+    // break the chat reply, so we swallow errors after logging.
+    try { recordGonxheUsage(data.usage); } catch (e) { console.error('gonxhe usage log failed', e); }
     const text = (data.content || [])
       .filter(b => b.type === 'text')
       .map(b => b.text)
@@ -235,6 +309,46 @@ app.post('/api/dashboard-auth', (req, res) => {
   const expected = process.env.DASHBOARD_PASSWORD;
   const provided = (req.body && req.body.password) || '';
   res.json({ ok: !!expected && provided === expected });
+});
+
+// ─── ADMIN AUTH PING (used by the Gonxhe Cost lock) ──────────────────────
+app.post('/api/admin-auth', (req, res) => {
+  const provided = (req.body && req.body.password) || '';
+  res.json({ ok: provided === ADMIN_PASSWORD });
+});
+
+// ─── GONXHE USAGE (admin-only) ───────────────────────────────────────────
+app.get('/api/gonxhe-usage', requireAdminAuth, (_req, res) => {
+  const data = readJSON(GONXHE_USAGE_FILE, { lifetime: zeroUsageBucket(), byDay: {} });
+  const today = new Date().toISOString().slice(0, 10);
+  const monthPrefix = today.slice(0, 7); // YYYY-MM
+
+  const sumDays = (predicate) => {
+    const acc = zeroUsageBucket();
+    for (const [day, b] of Object.entries(data.byDay || {})) {
+      if (!predicate(day)) continue;
+      acc.input += b.input || 0;
+      acc.output += b.output || 0;
+      acc.cache_create += b.cache_create || 0;
+      acc.cache_read += b.cache_read || 0;
+      acc.messages += b.messages || 0;
+    }
+    return acc;
+  };
+
+  const todayBucket = data.byDay?.[today] || zeroUsageBucket();
+  const monthBucket = sumDays(d => d.startsWith(monthPrefix));
+  const lifetimeBucket = data.lifetime || zeroUsageBucket();
+
+  const withCost = (b) => ({ ...b, cost_usd: computeGonxheCost(b) });
+
+  res.json({
+    model: process.env.GONXHE_MODEL || 'claude-sonnet-4-6',
+    rates_per_million_usd: GONXHE_RATES_PER_MILLION,
+    today: withCost(todayBucket),
+    month: withCost(monthBucket),
+    lifetime: withCost(lifetimeBucket),
+  });
 });
 
 // ─── PROTECTED READ ENDPOINTS (dashboard) ────────────────────────────────
