@@ -403,20 +403,26 @@ section { padding: 14px 18px; }
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .phone-row { display: flex; gap: 8px; }
 .phone-prefix {
-  flex: 0 0 130px;
+  flex: 0 0 108px;
+  min-width: 0;
+  width: 108px;
   background-image: linear-gradient(45deg, transparent 50%, var(--gold) 50%),
                     linear-gradient(135deg, var(--gold) 50%, transparent 50%);
-  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-position: calc(100% - 12px) 50%, calc(100% - 7px) 50%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
   appearance: none; -webkit-appearance: none; -moz-appearance: none;
-  padding-right: 26px;
+  padding-left: 10px;
+  padding-right: 22px;
   font-family: 'Jost', sans-serif;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .phone-prefix option { background: var(--navy-panel); color: var(--cream); }
 .phone-number { flex: 1; min-width: 0; }
 @media (max-width: 400px) {
-  .phone-prefix { flex: 0 0 110px; }
+  .phone-prefix { flex: 0 0 100px; width: 100px; }
 }
 .form-success {
   display: none;
