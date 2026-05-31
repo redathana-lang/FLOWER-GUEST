@@ -297,8 +297,8 @@ const GONXHE_BOOKING_GUIDE =
   "After the tool returns, show the guest a short summary table of their request, then the ready WhatsApp link " +
   "rendered as a markdown link with this EXACT short label and nothing else: [📲 Tap to get your booking confirmation](LINK). " +
   "Never paste the raw URL on its own — always wrap it in that markdown label so the guest sees a short button, not a long link. Do NOT tell the guest the " +
-  "booking is confirmed, done, or booked — nothing is confirmed yet. Instead reassure them that our reservations " +
-  "team is checking availability and will reply shortly to confirm the time or propose an alternative.";
+  "booking is confirmed, done, or booked — nothing is confirmed yet. Instead, clearly tell the guest that our " +
+  "reservations team will send them a confirmation very soon, and may confirm the requested time or propose an alternative.";
 
 // Build the pre-filled reception WhatsApp message + log the request to the
 // staff dashboard event feed. Returns the data Gonxhe needs to reply.
