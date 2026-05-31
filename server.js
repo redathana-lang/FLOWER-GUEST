@@ -269,6 +269,23 @@ app.post('/api/gonxhe', async (req, res) => {
   // the dashboard's "Train Gonxhe" tab. The browser never controls it.
   const effectiveSystem = getSystemPrompt();
 
+  // Give Gonxhe the current date/time in the hotel's timezone so she never has
+  // to ask the guest what day it is. Kept as a separate (uncached) system block
+  // so the large editable prompt above still gets a cache hit.
+  let nowBlock = '';
+  try {
+    nowBlock = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Tirane',
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date());
+  } catch (_) {
+    nowBlock = new Date().toUTCString();
+  }
+  const dateContext =
+    `Current date and time at the hotel (Europe/Tirane, Albania): ${nowBlock}. ` +
+    `Use this as "today" for any date question — never ask the guest what the date is.`;
+
   try {
     const upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -280,7 +297,10 @@ app.post('/api/gonxhe', async (req, res) => {
       body: JSON.stringify({
         model: process.env.GONXHE_MODEL || 'claude-sonnet-4-6',
         max_tokens: 700,
-        system: [{ type: 'text', text: effectiveSystem, cache_control: { type: 'ephemeral' } }],
+        system: [
+          { type: 'text', text: effectiveSystem, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: dateContext },
+        ],
         messages,
       }),
     });
