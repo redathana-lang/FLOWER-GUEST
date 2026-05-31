@@ -295,8 +295,9 @@ const GONXHE_BOOKING_GUIDE =
   "(plus the restaurant — Flower Restaurant or Brutal Steakhouse — for the Dégustation Menu), then call the " +
   "prepare_booking_request tool. Ask for any missing detail first; never invent a name, room, or time. " +
   "After the tool returns, show the guest a short summary table of their request, then the ready WhatsApp link " +
-  "rendered as a markdown link exactly like [📲 Send my request to Reception](LINK). Tell them reception will " +
-  "confirm or suggest another time once they tap to send it.";
+  "rendered as a markdown link exactly like [📲 Send my request to Reception](LINK). Do NOT tell the guest the " +
+  "booking is confirmed, done, or booked — nothing is confirmed yet. Instead reassure them that our reservations " +
+  "team is checking availability and will reply shortly to confirm the time or propose an alternative.";
 
 // Build the pre-filled reception WhatsApp message + log the request to the
 // staff dashboard event feed. Returns the data Gonxhe needs to reply.
