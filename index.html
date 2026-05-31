@@ -982,6 +982,20 @@ section { padding: 14px 18px; }
   word-break: break-all;
 }
 .gmsg.bot a:hover { color: var(--gold-light); }
+/* Booking call-to-action — the "Send to Reception" WhatsApp button Gonxhe emits */
+.gmsg a.chat-cta {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--gold), var(--gold-light));
+  color: var(--navy);
+  font-weight: 600;
+  text-decoration: none;
+  word-break: normal;
+  white-space: nowrap;
+}
+.gmsg a.chat-cta:hover { color: var(--navy); filter: brightness(1.06); }
 .gmsg.user a {
   color: var(--navy);
   text-decoration: underline;
@@ -2228,9 +2242,15 @@ function formatChatText(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+  // Single pass: a markdown link [label](url) renders with friendly label text
+  // (used for the booking "Send to Reception" button); any other bare URL is
+  // linkified as-is. Handling both in one regex stops the bare-URL branch from
+  // re-wrapping a URL that's already inside a markdown link.
   const linked = escaped.replace(
-    /(https?:\/\/[A-Za-z0-9\-._~:\/?#@!$&*+=%]+)/g,
-    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[A-Za-z0-9\-._~:\/?#@!$&*+=%]+)/g,
+    (m, label, mdUrl, bareUrl) => label
+      ? `<a class="chat-cta" href="${mdUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`
+      : `<a href="${bareUrl}" target="_blank" rel="noopener noreferrer">${bareUrl}</a>`
   );
   return linked.replace(/\n/g, '<br>');
 }

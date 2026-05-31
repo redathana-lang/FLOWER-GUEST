@@ -256,6 +256,85 @@ app.post('/api/conversation', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── GONXHE BOOKING TOOL ─────────────────────────────────────────────────
+// Reception WhatsApp (digits only, for wa.me). Mirrors WA_PHONE in index.html.
+const RECEPTION_WA = '355692073380';
+
+// One tool: turn a guest's booking intent into a ready-to-send WhatsApp message
+// to reception. There is no WhatsApp Business API here — "sending" means handing
+// the guest a wa.me deep link, pre-filled with the booking details, that they tap
+// to fire off to reception (who then confirm or propose another time).
+const GONXHE_TOOLS = [{
+  name: 'prepare_booking_request',
+  description:
+    "Use this when a guest wants to BOOK one of these and you have all the details: " +
+    "(a) a Spa treatment, (b) a Salon/hair service such as a blow dry, or (c) the Dégustation Menu. " +
+    "Before calling, make sure you have: the service name, the guest's preferred day/time, the guest's name, and their room number. " +
+    "For the Dégustation Menu you ALSO need the restaurant (Flower Restaurant or Brutal Steakhouse). " +
+    "If any required detail is missing, ask the guest for it first — do NOT guess. " +
+    "This returns a ready-to-send WhatsApp message link for reception; present it to the guest with a short summary table.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      category: { type: 'string', enum: ['spa', 'salon', 'degustation'],
+        description: 'spa = spa treatment; salon = hair/beauty e.g. blow dry; degustation = Dégustation Menu' },
+      service: { type: 'string', description: 'The exact service, e.g. "Blow dry", "Couple Massage", "Dégustation Menu".' },
+      preferredTime: { type: 'string', description: 'The day and/or time the guest wants, in their own words, e.g. "today 16:00", "tomorrow 7:30pm".' },
+      guestName: { type: 'string', description: "The guest's name." },
+      roomNumber: { type: 'string', description: "The guest's room number." },
+      restaurant: { type: 'string', enum: ['Flower Restaurant', 'Brutal Steakhouse'],
+        description: 'Required ONLY when category is degustation.' },
+    },
+    required: ['category', 'service', 'preferredTime', 'guestName', 'roomNumber'],
+  },
+}];
+
+const GONXHE_BOOKING_GUIDE =
+  "BOOKING REQUESTS — when a guest wants to book a Spa treatment, a Salon/hair service (e.g. a blow dry), " +
+  "or the Dégustation Menu: collect the service, the preferred day/time, the guest's name and room number " +
+  "(plus the restaurant — Flower Restaurant or Brutal Steakhouse — for the Dégustation Menu), then call the " +
+  "prepare_booking_request tool. Ask for any missing detail first; never invent a name, room, or time. " +
+  "After the tool returns, show the guest a short summary table of their request, then the ready WhatsApp link " +
+  "rendered as a markdown link exactly like [📲 Send my request to Reception](LINK). Tell them reception will " +
+  "confirm or suggest another time once they tap to send it.";
+
+// Build the pre-filled reception WhatsApp message + log the request to the
+// staff dashboard event feed. Returns the data Gonxhe needs to reply.
+function runBookingTool(input) {
+  const cat = input && input.category;
+  const lines = [
+    'New booking request via Gonxhe',
+    `Service: ${input.service}`,
+  ];
+  if (cat === 'degustation' && input.restaurant) {
+    lines.push(`Restaurant: ${input.restaurant}`);
+  }
+  lines.push(
+    `Preferred time: ${input.preferredTime}`,
+    `Guest: ${input.guestName}`,
+    `Room: ${input.roomNumber}`,
+    '',
+    'Please confirm this time, or suggest an alternative. Thank you!'
+  );
+  const waMessage = lines.join('\n');
+  const link = `https://wa.me/${RECEPTION_WA}?text=${encodeURIComponent(waMessage)}`;
+
+  try {
+    appendItem('events.json', {
+      id: crypto.randomUUID(),
+      ts: new Date().toISOString(),
+      room: String(input.roomNumber || '—').slice(0, 32),
+      type: 'gonxhe_booking_request',
+      detail: [input.service, cat === 'degustation' ? input.restaurant : null, input.preferredTime]
+        .filter(Boolean).join(' · ').slice(0, 280),
+      guest: String(input.guestName || '').slice(0, 80),
+      sessionId: '',
+    });
+  } catch (e) { console.error('booking event log failed', e); }
+
+  return { whatsappLink: link, summary: { ...input } };
+}
+
 // ─── GONXHE PROXY ────────────────────────────────────────────────────────
 app.post('/api/gonxhe', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -286,38 +365,70 @@ app.post('/api/gonxhe', async (req, res) => {
     `Current date and time at the hotel (Europe/Tirane, Albania): ${nowBlock}. ` +
     `Use this as "today" for any date question — never ask the guest what the date is.`;
 
+  const system = [
+    { type: 'text', text: effectiveSystem, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: dateContext },
+    { type: 'text', text: GONXHE_BOOKING_GUIDE },
+  ];
+
+  // Work on a copy so the tool-use loop can append turns without touching what
+  // the browser sent (the client only ever stores Gonxhe's final text reply).
+  const convo = messages.slice();
+
   try {
-    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: process.env.GONXHE_MODEL || 'claude-sonnet-4-6',
-        max_tokens: 700,
-        system: [
-          { type: 'text', text: effectiveSystem, cache_control: { type: 'ephemeral' } },
-          { type: 'text', text: dateContext },
-        ],
-        messages,
-      }),
-    });
-    const data = await upstream.json();
-    if (!upstream.ok) {
-      console.error('Anthropic upstream error', upstream.status, data);
-      return res.status(upstream.status).json({ error: 'upstream', detail: data });
+    let finalText = '';
+    // A booking resolves in one tool round-trip; the cap is a runaway guard.
+    for (let hop = 0; hop < 4; hop++) {
+      const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: process.env.GONXHE_MODEL || 'claude-sonnet-4-6',
+          max_tokens: 700,
+          system,
+          tools: GONXHE_TOOLS,
+          messages: convo,
+        }),
+      });
+      const data = await upstream.json();
+      if (!upstream.ok) {
+        console.error('Anthropic upstream error', upstream.status, data);
+        return res.status(upstream.status).json({ error: 'upstream', detail: data });
+      }
+      // Persist usage for the Gonxhe Cost dashboard (every hop counts). Failures
+      // here must never break the chat reply, so we swallow errors after logging.
+      try { recordGonxheUsage(data.usage); } catch (e) { console.error('gonxhe usage log failed', e); }
+
+      const blocks = data.content || [];
+      const textNow = blocks.filter(b => b.type === 'text').map(b => b.text).join(' ').trim();
+      if (textNow) finalText = textNow;
+
+      if (data.stop_reason !== 'tool_use') break;
+
+      // Run each requested tool and feed the results back for the next hop.
+      const toolResults = blocks.filter(b => b.type === 'tool_use').map(tu => {
+        let content;
+        try {
+          content = tu.name === 'prepare_booking_request'
+            ? JSON.stringify(runBookingTool(tu.input || {}))
+            : JSON.stringify({ error: 'unknown_tool' });
+        } catch (e) {
+          console.error('gonxhe tool failed', e);
+          content = JSON.stringify({ error: 'tool_failed' });
+        }
+        return { type: 'tool_result', tool_use_id: tu.id, content };
+      });
+      convo.push({ role: 'assistant', content: blocks });
+      convo.push({ role: 'user', content: toolResults });
     }
-    // Persist usage for the Gonxhe Cost dashboard. Failures here must never
-    // break the chat reply, so we swallow errors after logging.
-    try { recordGonxheUsage(data.usage); } catch (e) { console.error('gonxhe usage log failed', e); }
-    const text = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join(' ')
-      .trim();
-    res.json({ text });
+    if (!finalText) {
+      finalText = 'Please contact our reception on WhatsApp: https://wa.me/' + RECEPTION_WA;
+    }
+    res.json({ text: finalText });
   } catch (err) {
     console.error('Gonxhe proxy failed', err);
     res.status(500).json({ error: 'proxy_failed' });
