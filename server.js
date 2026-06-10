@@ -73,8 +73,105 @@ function setSystemPrompt(text) {
   fs.renameSync(tmp, full);
 }
 
+// ─── Website system prompt (separate, used when channel === 'website') ──────
+// Same override-wins pattern as the in-house prompt: a saved copy on the
+// persistent disk wins, otherwise we fall back to website-system-prompt.txt
+// shipped in the repo. Lets the website Gonxhe be trained independently.
+const WEBSITE_PROMPT_FILE = 'website-system-prompt.txt';
+const DEFAULT_WEBSITE_PROMPT_PATH = path.join(__dirname, 'website-system-prompt.txt');
+
+function getWebsitePrompt() {
+  try {
+    const saved = fs.readFileSync(path.join(DATA_DIR, WEBSITE_PROMPT_FILE), 'utf8');
+    if (saved && saved.trim().length >= 20) return saved;
+  } catch (_) {}
+  try {
+    return fs.readFileSync(DEFAULT_WEBSITE_PROMPT_PATH, 'utf8');
+  } catch (e) {
+    console.error('Website system prompt missing — falling back to in-house prompt', e);
+    return getSystemPrompt();
+  }
+}
+function setWebsitePrompt(text) {
+  const full = path.join(DATA_DIR, WEBSITE_PROMPT_FILE);
+  const tmp = full + '.tmp';
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, full);
+}
+
+// ─── Geo-IP (offline) + website-visitor tracking (Phase A) ─────────────────
+// geoip-lite is an offline country database — no third-party calls, no IP ever
+// leaves the server. Loaded defensively so the app still boots if it's absent.
+let geoip = null;
+try { geoip = require('geoip-lite'); }
+catch (e) { console.warn('geoip-lite unavailable; visitor country will be blank'); }
+
+function clientIp(req) {
+  const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xf || (req.socket && req.socket.remoteAddress) || '';
+}
+function countryFromReq(req) {
+  try {
+    if (!geoip) return '';
+    const g = geoip.lookup(clientIp(req));
+    return (g && g.country) || ''; // ISO 3166-1 alpha-2, e.g. "IT", "AL"
+  } catch (_) { return ''; }
+}
+
+// One JSON map keyed by sessionId. We store only the resolved country, never
+// the raw IP, plus the funnel flags the dashboard reports on.
+const WEB_VISITORS_FILE = 'web-visitors.json';
+function emptyFunnel() {
+  return { opened: false, messaged: false, bookingLinkShown: false,
+           bookingLinkClicked: false, whatsappClicked: false, leadCaptured: false };
+}
+function upsertWebVisitor(sessionId, patch, req) {
+  if (!sessionId) return null;
+  const all = readJSON(WEB_VISITORS_FILE, {});
+  const now = new Date().toISOString();
+  const prev = all[sessionId] || {
+    sessionId, channel: 'website',
+    country: req ? countryFromReq(req) : '',
+    name: '', email: '', phone: '',
+    messages: 0, funnel: emptyFunnel(), firstSeen: now,
+  };
+  if (!prev.country && req) prev.country = countryFromReq(req);
+  const { incMessages, funnel: patchFunnel, ...rest } = patch || {};
+  const next = { ...prev, ...rest, lastSeen: now };
+  if (incMessages) next.messages = (prev.messages || 0) + 1;
+  next.funnel = { ...emptyFunnel(), ...prev.funnel, ...(patchFunnel || {}) };
+  all[sessionId] = next;
+  const keys = Object.keys(all);
+  if (keys.length > 2000) {
+    keys.sort((a, b) => (all[a].lastSeen > all[b].lastSeen ? 1 : -1));
+    while (Object.keys(all).length > 2000) delete all[keys.shift()];
+  }
+  writeJSON(WEB_VISITORS_FILE, all);
+  return next;
+}
+
 // ─── Middleware ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
+
+// We sit behind Render's proxy — trust it so clientIp() reads X-Forwarded-For.
+app.set('trust proxy', true);
+
+// CORS — only the public chat/widget endpoints are opened cross-origin so the
+// hotel website (a different domain, e.g. Webflow) can talk to Gonxhe. The
+// dashboard/admin/read endpoints are NOT listed here and stay same-origin.
+const PUBLIC_API_PREFIXES = ['/api/gonxhe', '/api/web', '/api/conversation', '/api/event', '/api/feedback', '/api/guest'];
+app.use((req, res, next) => {
+  const open = PUBLIC_API_PREFIXES.some(p => req.path === p || req.path.startsWith(p + '/'));
+  if (open) {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Max-Age', '86400');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+  }
+  next();
+});
 
 function requireDashboardAuth(req, res, next) {
   const expected = process.env.DASHBOARD_PASSWORD;
@@ -235,13 +332,15 @@ app.post('/api/feedback', (req, res) => {
 });
 
 app.post('/api/conversation', (req, res) => {
-  const { sessionId, room, guest, messages } = req.body || {};
+  const { sessionId, room, guest, messages, channel } = req.body || {};
   if (!sessionId || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'sessionId and messages required' });
   }
+  const isWebsite = channel === 'website';
   const all = readJSON('conversations.json', {});
   all[sessionId] = {
     sessionId,
+    channel: isWebsite ? 'website' : 'guest',
     room: room || '—',
     guest: String(guest || '').slice(0, 80),
     messages: messages.slice(-60),
@@ -253,6 +352,32 @@ app.post('/api/conversation', (req, res) => {
     while (keys.length > 1000) delete all[keys.shift()];
   }
   writeJSON('conversations.json', all);
+  // Make sure a website visitor record exists (with resolved country) even if
+  // the widget's "opened" ping was missed.
+  if (isWebsite) {
+    try { upsertWebVisitor(sessionId, { funnel: { opened: true } }, req); }
+    catch (e) { console.error('web visitor (conversation) update failed', e); }
+  }
+  res.json({ ok: true });
+});
+
+// ─── WEBSITE VISITOR FUNNEL PING (public, CORS-open) ──────────────────────
+// The widget calls this to record funnel steps it can see client-side:
+// 'opened', 'booking_link_clicked', 'whatsapp_clicked'. (messaged /
+// bookingLinkShown are set server-side inside /api/gonxhe.)
+app.post('/api/web/visit', (req, res) => {
+  const { sessionId, event } = req.body || {};
+  if (!sessionId || !event) {
+    return res.status(400).json({ error: 'sessionId and event required' });
+  }
+  const EVENT_TO_FLAG = {
+    opened: 'opened',
+    booking_link_shown: 'bookingLinkShown',
+    booking_link_clicked: 'bookingLinkClicked',
+    whatsapp_clicked: 'whatsappClicked',
+  };
+  const flag = EVENT_TO_FLAG[event];
+  upsertWebVisitor(sessionId, { funnel: flag ? { [flag]: true } : {} }, req);
   res.json({ ok: true });
 });
 
@@ -337,18 +462,69 @@ function runBookingTool(input) {
   return { whatsappLink: link, summary: { ...input } };
 }
 
+// ─── WEBSITE TOOL — capture_lead (channel === 'website') ───────────────────
+// Stores a website visitor's contact details when THEY offer them. Mirrors the
+// "conversational, only when offered" rule in the website prompt.
+const CAPTURE_LEAD_TOOL = {
+  name: 'capture_lead',
+  description:
+    "Save a website visitor's contact details ONLY after they have freely offered them " +
+    "(for a callback, a custom/group quote, or a follow-up). Never ask for details just to " +
+    "call this tool, and never invent values. Pass only the fields the visitor actually gave.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      name:  { type: 'string', description: "Visitor's name, if given." },
+      email: { type: 'string', description: 'Email, if given.' },
+      phone: { type: 'string', description: 'Phone / WhatsApp number, if given.' },
+      note:  { type: 'string', description: 'Short note on what they want (callback, quote, dates of interest).' },
+    },
+  },
+};
+const WEBSITE_TOOLS = [CAPTURE_LEAD_TOOL];
+
+const WEBSITE_TOOL_GUIDE =
+  'You are on the public website with a PROSPECTIVE guest who has not booked. Your priority is to ' +
+  'guide them into the Cloudbeds booking engine to book a room directly. When (and only when) a visitor ' +
+  'freely shares their name, email, or phone for a callback, quote, or follow-up, call the capture_lead tool ' +
+  'to save it — never ask for personal details just to use the tool, and never invent values.';
+
+function runCaptureLead(sessionId, input, req) {
+  const name  = String((input && input.name)  || '').slice(0, 80);
+  const email = String((input && input.email) || '').slice(0, 120);
+  const phone = String((input && input.phone) || '').slice(0, 40);
+  const note  = String((input && input.note)  || '').slice(0, 280);
+  upsertWebVisitor(sessionId, {
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
+    funnel: { leadCaptured: true },
+  }, req);
+  try {
+    appendItem('events.json', {
+      id: crypto.randomUUID(), ts: new Date().toISOString(),
+      room: '—', type: 'web_lead_captured',
+      detail: [name, email, phone, note].filter(Boolean).join(' · ').slice(0, 280),
+      guest: name, sessionId: sessionId || '', channel: 'website',
+    });
+  } catch (e) { console.error('lead event log failed', e); }
+  return { ok: true, saved: { name, email, phone } };
+}
+
 // ─── GONXHE PROXY ────────────────────────────────────────────────────────
 app.post('/api/gonxhe', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured' });
 
-  const { messages } = req.body || {};
+  const { messages, channel, sessionId } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages required' });
   }
+  const isWebsite = channel === 'website';
   // Server is the single source of truth for the system prompt — editable from
-  // the dashboard's "Train Gonxhe" tab. The browser never controls it.
-  const effectiveSystem = getSystemPrompt();
+  // the dashboard's "Train Gonxhe" tab. The browser never controls it. The
+  // website channel uses its own separately-trained prompt.
+  const effectiveSystem = isWebsite ? getWebsitePrompt() : getSystemPrompt();
 
   // Give Gonxhe the current date/time in the hotel's timezone so she never has
   // to ask the guest what day it is. Kept as a separate (uncached) system block
@@ -370,7 +546,7 @@ app.post('/api/gonxhe', async (req, res) => {
   const system = [
     { type: 'text', text: effectiveSystem, cache_control: { type: 'ephemeral' } },
     { type: 'text', text: dateContext },
-    { type: 'text', text: GONXHE_BOOKING_GUIDE },
+    { type: 'text', text: isWebsite ? WEBSITE_TOOL_GUIDE : GONXHE_BOOKING_GUIDE },
   ];
 
   // Work on a copy so the tool-use loop can append turns without touching what
@@ -392,7 +568,7 @@ app.post('/api/gonxhe', async (req, res) => {
           model: process.env.GONXHE_MODEL || 'claude-sonnet-4-6',
           max_tokens: 700,
           system,
-          tools: GONXHE_TOOLS,
+          tools: isWebsite ? WEBSITE_TOOLS : GONXHE_TOOLS,
           messages: convo,
         }),
       });
@@ -415,9 +591,13 @@ app.post('/api/gonxhe', async (req, res) => {
       const toolResults = blocks.filter(b => b.type === 'tool_use').map(tu => {
         let content;
         try {
-          content = tu.name === 'prepare_booking_request'
-            ? JSON.stringify(runBookingTool(tu.input || {}))
-            : JSON.stringify({ error: 'unknown_tool' });
+          if (tu.name === 'prepare_booking_request') {
+            content = JSON.stringify(runBookingTool(tu.input || {}));
+          } else if (tu.name === 'capture_lead') {
+            content = JSON.stringify(runCaptureLead(sessionId, tu.input || {}, req));
+          } else {
+            content = JSON.stringify({ error: 'unknown_tool' });
+          }
         } catch (e) {
           console.error('gonxhe tool failed', e);
           content = JSON.stringify({ error: 'tool_failed' });
@@ -429,6 +609,18 @@ app.post('/api/gonxhe', async (req, res) => {
     }
     if (!finalText) {
       finalText = 'Please contact our reception on WhatsApp: https://wa.me/' + RECEPTION_WA;
+    }
+    // Website funnel: count the exchange and flag when a booking-engine link was
+    // offered, so the Website dashboard shows engagement without the widget
+    // reporting every turn separately.
+    if (isWebsite && sessionId) {
+      try {
+        const showsBooking = /cloudbeds\.com/i.test(finalText);
+        upsertWebVisitor(sessionId, {
+          incMessages: true,
+          funnel: { messaged: true, ...(showsBooking ? { bookingLinkShown: true } : {}) },
+        }, req);
+      } catch (e) { console.error('web visitor update failed', e); }
     }
     res.json({ text: finalText });
   } catch (err) {
@@ -508,8 +700,50 @@ app.get('/api/feedback', requireDashboardAuth, (_req, res) => {
 
 app.get('/api/conversations', requireDashboardAuth, (_req, res) => {
   const map = readJSON('conversations.json', {});
-  const list = Object.values(map).sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
+  // In-house tab shows guest-app chats only; website chats live in /api/web-activity.
+  const list = Object.values(map)
+    .filter(c => c.channel !== 'website')
+    .sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
   res.json({ conversations: list });
+});
+
+// ─── WEBSITE ACTIVITY (admin/dashboard read) ──────────────────────────────
+// Joins each website visitor with their transcript and returns funnel totals.
+app.get('/api/web-activity', requireDashboardAuth, (_req, res) => {
+  const visitorsMap = readJSON(WEB_VISITORS_FILE, {});
+  const convs = readJSON('conversations.json', {});
+  const visitors = Object.values(visitorsMap)
+    .map(v => ({ ...v, transcript: (convs[v.sessionId] && convs[v.sessionId].messages) || [] }))
+    .sort((a, b) => ((a.lastSeen || '') > (b.lastSeen || '') ? -1 : 1));
+  const funnel = { visitors: visitors.length, opened: 0, messaged: 0,
+    bookingLinkShown: 0, bookingLinkClicked: 0, whatsappClicked: 0, leadCaptured: 0 };
+  for (const v of visitors) {
+    const f = v.funnel || {};
+    if (f.opened) funnel.opened++;
+    if (f.messaged) funnel.messaged++;
+    if (f.bookingLinkShown) funnel.bookingLinkShown++;
+    if (f.bookingLinkClicked) funnel.bookingLinkClicked++;
+    if (f.whatsappClicked) funnel.whatsappClicked++;
+    if (f.leadCaptured) funnel.leadCaptured++;
+  }
+  res.json({ visitors, funnel });
+});
+
+// ─── WEBSITE SYSTEM PROMPT (Train Gonxhe · Website) ───────────────────────
+app.get('/api/website-prompt', requireDashboardAuth, (_req, res) => {
+  res.json({ prompt: getWebsitePrompt() });
+});
+app.post('/api/website-prompt', requireDashboardAuth, (req, res) => {
+  const { prompt } = req.body || {};
+  if (typeof prompt !== 'string' || prompt.length < 20) {
+    return res.status(400).json({ error: 'prompt too short' });
+  }
+  setWebsitePrompt(prompt);
+  res.json({ ok: true });
+});
+app.post('/api/website-prompt/reset', requireDashboardAuth, (_req, res) => {
+  try { fs.unlinkSync(path.join(DATA_DIR, WEBSITE_PROMPT_FILE)); } catch (_) {}
+  res.json({ ok: true, prompt: getWebsitePrompt() });
 });
 
 app.get('/api/system-prompt', requireDashboardAuth, (_req, res) => {

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#070E1B" />
+<title>Gonxhe · Website Activity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy: #070E1B; --navy-panel: #0E1A2E; --navy-elev: #142540;
+  --navy-line: rgba(196, 169, 106, 0.10);
+  --gold: #C4A96A; --gold-light: #D8C08E; --gold-deep: #9C8550;
+  --gold-soft: rgba(196, 169, 106, 0.12);
+  --cream: #F0E8D8; --cream-mid: rgba(240, 232, 216, 0.78);
+  --cream-soft: rgba(240, 232, 216, 0.55); --cream-faint: rgba(240, 232, 216, 0.35);
+  --green: #6FAA8E; --red: #B26A6A; --amber: #D8B05E; --r: 12px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Jost', sans-serif; color: var(--cream); background: var(--navy);
+  -webkit-font-smoothing: antialiased; font-size: 14px; line-height: 1.55;
+  background:
+    radial-gradient(ellipse 900px 700px at 15% -5%, rgba(196,169,106,0.06), transparent 60%),
+    radial-gradient(ellipse 800px 800px at 110% 30%, rgba(196,169,106,0.04), transparent 65%),
+    var(--navy);
+  min-height: 100vh;
+}
+em { font-family: 'Playfair Display', serif; font-style: italic; color: var(--gold); }
+
+/* ─── LOCK ─────────────────────────────────────────── */
+.lock-screen { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--navy); }
+.lock-screen.hidden { display: none; }
+.lock-card { width: 100%; max-width: 380px; background: var(--navy-panel); border: 1px solid rgba(196,169,106,0.22); border-radius: 22px; padding: 40px 32px; text-align: center; box-shadow: 0 40px 80px rgba(0,0,0,0.6); }
+.lock-emblem { width: 54px; height: 54px; border-radius: 14px; background: linear-gradient(135deg, var(--gold), var(--gold-light)); display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-style: italic; font-weight: 600; font-size: 26px; color: var(--navy); margin: 0 auto 22px; box-shadow: 0 8px 24px rgba(196,169,106,0.4); }
+.lock-title { font-family: 'Playfair Display', serif; font-style: italic; font-size: 22px; font-weight: 500; margin-bottom: 6px; }
+.lock-sub { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--cream-faint); margin-bottom: 28px; }
+.lock-input { width: 100%; background: var(--navy); border: 1px solid var(--navy-line); border-radius: 11px; padding: 14px 16px; font-family: 'Jost', sans-serif; font-size: 14px; color: var(--cream); outline: none; margin-bottom: 12px; transition: border-color 0.2s; }
+.lock-input:focus { border-color: rgba(196,169,106,0.5); }
+.lock-input::placeholder { color: var(--cream-faint); }
+.lock-btn { width: 100%; padding: 14px 16px; background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: var(--navy); border: none; border-radius: 11px; font-family: 'Jost', sans-serif; font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 700; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+.lock-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(196,169,106,0.4); }
+.lock-error { color: var(--red); font-size: 12px; margin-top: 10px; min-height: 16px; }
+
+/* ─── SHELL ─────────────────────────────────────────── */
+.wrap { max-width: 1240px; margin: 0 auto; padding: 22px 22px 60px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 2px 20px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 13px; }
+.brand-emblem { width: 42px; height: 42px; border-radius: 11px; background: linear-gradient(135deg, var(--gold), var(--gold-light)); display: flex; align-items: center; justify-content: center; font-family: 'Playfair Display', serif; font-style: italic; font-weight: 600; font-size: 21px; color: var(--navy); box-shadow: 0 6px 18px rgba(196,169,106,0.34); }
+.brand-name { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 500; }
+.brand-sub { font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--cream-faint); margin-top: 2px; }
+.status { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--cream-soft); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; box-shadow: 0 0 0 3px rgba(111,170,142,0.18); }
+.ghost-btn { background: transparent; border: 1px solid var(--navy-line); color: var(--cream-soft); border-radius: 9px; padding: 8px 14px; font-family: 'Jost', sans-serif; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; transition: border-color .2s, color .2s; }
+.ghost-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+.section-title { font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 500; margin: 26px 2px 14px; }
+.section-title:first-of-type { margin-top: 6px; }
+
+/* ─── FUNNEL CARDS ──────────────────────────────────── */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.card { background: var(--navy-panel); border: 1px solid var(--navy-line); border-radius: var(--r); padding: 16px 18px; position: relative; overflow: hidden; }
+.card .k { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cream-faint); }
+.card .v { font-family: 'Playfair Display', serif; font-size: 30px; font-weight: 500; margin-top: 6px; line-height: 1; }
+.card .note { font-size: 11px; color: var(--cream-soft); margin-top: 6px; }
+.card.gold .v { color: var(--gold); }
+.card.green .v { color: var(--green); }
+.card.amber .v { color: var(--amber); }
+
+/* ─── TABLE ─────────────────────────────────────────── */
+.panel { background: var(--navy-panel); border: 1px solid var(--navy-line); border-radius: var(--r); overflow: hidden; }
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th { text-align: left; padding: 13px 16px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cream-faint); border-bottom: 1px solid var(--navy-line); white-space: nowrap; }
+tbody td { padding: 13px 16px; border-bottom: 1px solid rgba(196,169,106,0.06); vertical-align: middle; }
+tbody tr { cursor: pointer; transition: background .15s; }
+tbody tr:hover { background: rgba(196,169,106,0.05); }
+tbody tr:last-child td { border-bottom: none; }
+.flag { font-size: 16px; margin-right: 7px; }
+.muted { color: var(--cream-faint); }
+.who-name { color: var(--cream); }
+.who-mail { color: var(--cream-soft); font-size: 11.5px; }
+.pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.pill.opened   { color: var(--cream-soft); border-color: var(--navy-line); }
+.pill.engaged  { color: var(--amber); border-color: rgba(216,176,94,0.4); background: rgba(216,176,94,0.08); }
+.pill.shown    { color: var(--gold-light); border-color: rgba(196,169,106,0.4); background: var(--gold-soft); }
+.pill.pending  { color: var(--green); border-color: rgba(111,170,142,0.45); background: rgba(111,170,142,0.1); }
+.pill.lead     { color: var(--navy); background: linear-gradient(135deg, var(--gold), var(--gold-light)); }
+.empty { padding: 44px 20px; text-align: center; color: var(--cream-faint); font-style: italic; font-family: 'Playfair Display', serif; }
+
+/* ─── TRANSCRIPT DRAWER ─────────────────────────────── */
+.drawer-bg { position: fixed; inset: 0; background: rgba(4,8,16,0.66); backdrop-filter: blur(3px); z-index: 200; opacity: 0; pointer-events: none; transition: opacity .25s; }
+.drawer-bg.open { opacity: 1; pointer-events: auto; }
+.drawer { position: fixed; top: 0; right: 0; height: 100%; width: 440px; max-width: 92vw; background: var(--navy-panel); border-left: 1px solid rgba(196,169,106,0.22); z-index: 201; transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1); display: flex; flex-direction: column; box-shadow: -20px 0 60px rgba(0,0,0,0.5); }
+.drawer.open { transform: translateX(0); }
+.drawer-head { padding: 20px 22px; border-bottom: 1px solid var(--navy-line); }
+.drawer-head .dt { font-family: 'Playfair Display', serif; font-size: 18px; }
+.drawer-head .ds { font-size: 12px; color: var(--cream-soft); margin-top: 5px; }
+.drawer-close { position: absolute; top: 16px; right: 18px; background: transparent; border: 1px solid var(--navy-line); color: var(--cream-soft); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+.drawer-close:hover { border-color: var(--gold); color: var(--gold); }
+.drawer-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
+.msg { margin-bottom: 12px; max-width: 88%; padding: 10px 13px; border-radius: 13px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+.msg.user { margin-left: auto; background: var(--gold-soft); border: 1px solid rgba(196,169,106,0.25); border-bottom-right-radius: 4px; }
+.msg.assistant { margin-right: auto; background: var(--navy-elev); border: 1px solid var(--navy-line); border-bottom-left-radius: 4px; }
+.msg a { color: var(--gold-light); }
+
+@media (max-width: 640px) {
+  .topbar { gap: 10px; }
+  .card .v { font-size: 26px; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOCK -->
+<div class="lock-screen" id="lockScreen">
+  <form class="lock-card" onsubmit="return tryUnlock(event)">
+    <div class="lock-emblem">G</div>
+    <div class="lock-title">Gonxhe · <em>Website</em></div>
+    <div class="lock-sub">Visitor Activity</div>
+    <input class="lock-input" id="lockInput" type="password" placeholder="Dashboard password" autocomplete="current-password" />
+    <button class="lock-btn" type="submit">Unlock</button>
+    <div class="lock-error" id="lockError"></div>
+  </form>
+</div>
+
+<div class="wrap" id="app" style="display:none;">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-emblem">G</div>
+      <div>
+        <div class="brand-name">Gonxhe · <em>Website</em></div>
+        <div class="brand-sub">Visitor Activity · Live</div>
+      </div>
+    </div>
+    <div class="status">
+      <span><span class="status-dot"></span><span id="statusText">Connected</span></span>
+      <span id="lastUpdated" class="muted">—</span>
+      <a class="ghost-btn" href="/dashboard" style="text-decoration:none;">Main Dashboard</a>
+      <button class="ghost-btn" onclick="logout()">Lock</button>
+    </div>
+  </div>
+
+  <div class="section-title">The <em>funnel</em></div>
+  <div class="cards" id="funnelCards"></div>
+
+  <div class="section-title">Visitors <span class="muted" id="visitorCount"></span></div>
+  <div class="panel">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Country</th><th>Visitor</th><th>Stage</th><th>Msgs</th><th>First seen</th><th>Last seen</th></tr>
+        </thead>
+        <tbody id="visitorRows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- TRANSCRIPT DRAWER -->
+<div class="drawer-bg" id="drawerBg" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <button class="drawer-close" onclick="closeDrawer()">×</button>
+    <div class="dt" id="drawerTitle">Visitor</div>
+    <div class="ds" id="drawerSub">—</div>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<script>
+let PASSWORD = '';
+let DATA = { visitors: [], funnel: {} };
+let refreshTimer = null;
+
+/* ─── AUTH ─── */
+async function tryUnlock(e) {
+  e.preventDefault();
+  const pwd = document.getElementById('lockInput').value;
+  document.getElementById('lockError').textContent = '';
+  try {
+    const r = await fetch('/api/dashboard-auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
+    const d = await r.json();
+    if (d.ok) {
+      PASSWORD = pwd;
+      sessionStorage.setItem('fh_dash_pwd', pwd);
+      document.getElementById('lockScreen').classList.add('hidden');
+      document.getElementById('app').style.display = '';
+      await refresh();
+      refreshTimer = setInterval(refresh, 20000);
+    } else {
+      document.getElementById('lockError').textContent = 'Incorrect password.';
+    }
+  } catch (_) {
+    document.getElementById('lockError').textContent = 'Connection error. Try again.';
+  }
+  return false;
+}
+function logout() {
+  PASSWORD = '';
+  sessionStorage.removeItem('fh_dash_pwd');
+  if (refreshTimer) clearInterval(refreshTimer);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('lockScreen').classList.remove('hidden');
+  document.getElementById('lockInput').value = '';
+}
+
+/* ─── DATA ─── */
+async function refresh() {
+  try {
+    const r = await fetch('/api/web-activity', { headers: { 'X-Dashboard-Password': PASSWORD } });
+    if (r.status === 401) { logout(); return; }
+    DATA = await r.json();
+    render();
+    document.getElementById('statusText').textContent = 'Connected';
+    document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (_) {
+    document.getElementById('statusText').textContent = 'Offline';
+  }
+}
+
+/* ─── HELPERS ─── */
+function flagEmoji(iso) {
+  if (!iso || !/^[A-Za-z]{2}$/.test(iso)) return '🌐';
+  return iso.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+function linkify(s) {
+  return esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
+}
+function fmt(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function stageOf(f) {
+  f = f || {};
+  if (f.leadCaptured)       return { cls: 'lead',    label: 'Lead captured' };
+  if (f.bookingLinkClicked) return { cls: 'pending', label: 'Booking · pending' };
+  if (f.bookingLinkShown)   return { cls: 'shown',   label: 'Got booking link' };
+  if (f.messaged)           return { cls: 'engaged', label: 'Engaged' };
+  return { cls: 'opened', label: 'Opened chat' };
+}
+
+/* ─── RENDER ─── */
+function render() {
+  const f = DATA.funnel || {};
+  const cards = [
+    { k: 'Visitors', v: f.visitors || 0, cls: 'gold', note: 'opened the chat' },
+    { k: 'Engaged', v: f.messaged || 0, note: 'sent a message' },
+    { k: 'Got booking link', v: f.bookingLinkShown || 0, note: 'Gonxhe offered it' },
+    { k: 'Clicked to book', v: f.bookingLinkClicked || 0, cls: 'green', note: 'opened the engine (pending)' },
+    { k: 'WhatsApp clicks', v: f.whatsappClicked || 0, note: 'reception handoff' },
+    { k: 'Leads captured', v: f.leadCaptured || 0, cls: 'amber', note: 'name / contact shared' },
+  ];
+  document.getElementById('funnelCards').innerHTML = cards.map(c =>
+    `<div class="card ${c.cls || ''}"><div class="k">${c.k}</div><div class="v">${c.v}</div><div class="note">${c.note}</div></div>`
+  ).join('');
+
+  const vs = DATA.visitors || [];
+  document.getElementById('visitorCount').textContent = vs.length ? '· ' + vs.length : '';
+  const body = document.getElementById('visitorRows');
+  if (!vs.length) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty">No website visitors yet</div></td></tr>';
+    return;
+  }
+  body.innerHTML = vs.map((v, i) => {
+    const st = stageOf(v.funnel);
+    const name = v.name ? `<span class="who-name">${esc(v.name)}</span>` : '<span class="muted">Anonymous</span>';
+    const mail = v.email ? `<div class="who-mail">${esc(v.email)}</div>` : (v.phone ? `<div class="who-mail">${esc(v.phone)}</div>` : '');
+    return `<tr onclick="openDrawer(${i})">
+      <td><span class="flag">${flagEmoji(v.country)}</span><span class="muted">${v.country || '—'}</span></td>
+      <td>${name}${mail}</td>
+      <td><span class="pill ${st.cls}">${st.label}</span></td>
+      <td>${v.messages || (v.transcript ? Math.ceil(v.transcript.length / 2) : 0)}</td>
+      <td class="muted">${fmt(v.firstSeen)}</td>
+      <td class="muted">${fmt(v.lastSeen)}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ─── DRAWER ─── */
+function openDrawer(i) {
+  const v = (DATA.visitors || [])[i];
+  if (!v) return;
+  const st = stageOf(v.funnel);
+  document.getElementById('drawerTitle').innerHTML = `${flagEmoji(v.country)} ${esc(v.name || 'Anonymous visitor')}`;
+  const bits = [st.label];
+  if (v.email) bits.push(esc(v.email));
+  if (v.phone) bits.push(esc(v.phone));
+  bits.push('Last seen ' + fmt(v.lastSeen));
+  document.getElementById('drawerSub').innerHTML = bits.join(' · ');
+  const t = v.transcript || [];
+  document.getElementById('drawerBody').innerHTML = t.length
+    ? t.map(m => `<div class="msg ${m.role === 'user' ? 'user' : 'assistant'}">${linkify(m.content)}</div>`).join('')
+    : '<div class="empty">No transcript on record</div>';
+  document.getElementById('drawerBg').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer() {
+  document.getElementById('drawerBg').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+/* ─── BOOT ─── */
+(function () {
+  const saved = sessionStorage.getItem('fh_dash_pwd');
+  if (saved) {
+    document.getElementById('lockInput').value = saved;
+    tryUnlock({ preventDefault() {} });
+  } else {
+    setTimeout(() => document.getElementById('lockInput').focus(), 200);
+  }
+})();
+</script>
+</body>
+</html>
