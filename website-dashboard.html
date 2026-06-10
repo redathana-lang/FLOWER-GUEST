@@ -111,6 +111,35 @@ tbody tr:last-child td { border-bottom: none; }
   .topbar { gap: 10px; }
   .card .v { font-size: 26px; }
 }
+
+/* ─── TABS + TRAIN VIEW ─────────────────────────────── */
+.tabs { display: flex; gap: 6px; margin: 2px 0 20px; border-bottom: 1px solid var(--navy-line); }
+.tabbtn { background: transparent; border: none; color: var(--cream-soft); font-family: 'Jost', sans-serif; font-size: 13px; letter-spacing: .03em; padding: 11px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabbtn:hover { color: var(--cream); }
+.tabbtn.active { color: var(--gold); border-bottom-color: var(--gold); }
+.train-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .train-grid { grid-template-columns: 1fr; } }
+.train-card { background: var(--navy-panel); border: 1px solid var(--navy-line); border-radius: var(--r); padding: 18px 20px; }
+.train-card .ch { font-family: 'Playfair Display', serif; font-size: 17px; margin-bottom: 4px; }
+.train-card .cs { font-size: 12px; color: var(--cream-soft); margin-bottom: 14px; line-height: 1.5; }
+.prompt-box { width: 100%; min-height: 440px; resize: vertical; background: var(--navy); border: 1px solid var(--navy-line); border-radius: 10px; color: var(--cream); font-family: 'Jost', sans-serif; font-size: 13px; line-height: 1.6; padding: 14px; outline: none; }
+.prompt-box:focus { border-color: rgba(196,169,106,0.5); }
+.btnrow { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.gbtn { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: var(--navy); border: none; border-radius: 9px; padding: 11px 18px; font-family: 'Jost', sans-serif; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; cursor: pointer; }
+.gbtn:hover { filter: brightness(1.06); } .gbtn:disabled { opacity: .5; cursor: default; }
+.gbtn.ghost { background: transparent; border: 1px solid var(--navy-line); color: var(--cream-soft); }
+.gbtn.ghost:hover { border-color: var(--gold); color: var(--gold); filter: none; }
+.save-status { font-size: 12px; color: var(--green); }
+.test-msgs { min-height: 240px; max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding: 4px; margin-bottom: 12px; }
+.test-msgs::-webkit-scrollbar { width: 4px; } .test-msgs::-webkit-scrollbar-thumb { background: rgba(196,169,106,0.2); border-radius: 2px; }
+.tm { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+.tm.user { align-self: flex-end; background: var(--gold-soft); border: 1px solid rgba(196,169,106,0.25); }
+.tm.bot { align-self: flex-start; background: var(--navy-elev); border: 1px solid var(--navy-line); }
+.tm a { color: var(--gold-light); }
+.test-bar { display: flex; gap: 8px; }
+.test-in { flex: 1; background: var(--navy); border: 1px solid var(--navy-line); border-radius: 10px; padding: 10px 13px; color: var(--cream); font-family: 'Jost', sans-serif; font-size: 13px; outline: none; }
+.test-in:focus { border-color: rgba(196,169,106,0.5); }
+.test-note { font-size: 11px; color: var(--cream-faint); margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -144,6 +173,12 @@ tbody tr:last-child td { border-bottom: none; }
     </div>
   </div>
 
+  <div class="tabs">
+    <button class="tabbtn active" id="tab-activity" onclick="showView('activity')">Visitor Activity</button>
+    <button class="tabbtn" id="tab-train" onclick="showView('train')">Train Gonxhe</button>
+  </div>
+
+  <div id="view-activity">
   <div class="section-title">The <em>funnel</em></div>
   <div class="cards" id="funnelCards"></div>
 
@@ -156,6 +191,33 @@ tbody tr:last-child td { border-bottom: none; }
         </thead>
         <tbody id="visitorRows"></tbody>
       </table>
+    </div>
+  </div>
+  </div><!-- /view-activity -->
+
+  <div id="view-train" style="display:none;">
+    <div class="train-grid">
+      <div class="train-card">
+        <div class="ch">Train Gonxhe · <em>Website</em></div>
+        <div class="cs">Edit how the website Gonxhe answers — services, prices, packages, tone. Saving applies instantly to new website chats. This is separate from the in-room guest Gonxhe.</div>
+        <textarea class="prompt-box" id="promptBox" placeholder="Loading the website prompt…" spellcheck="false"></textarea>
+        <div class="btnrow">
+          <button class="gbtn" onclick="savePrompt()">Save changes</button>
+          <button class="gbtn ghost" onclick="loadPrompt()">Reload</button>
+          <button class="gbtn ghost" onclick="resetPrompt()">Reset to default</button>
+          <span class="save-status" id="saveStatus"></span>
+        </div>
+      </div>
+      <div class="train-card">
+        <div class="ch">Try her <em>live</em></div>
+        <div class="cs">Test your changes right away — these chats use the saved prompt and do NOT count in your visitor analytics.</div>
+        <div class="test-msgs" id="testMsgs"></div>
+        <div class="test-bar">
+          <input class="test-in" id="testIn" placeholder="Ask Gonxhe something…" onkeydown="if(event.key==='Enter'){event.preventDefault();sendTest();}" />
+          <button class="gbtn" onclick="sendTest()">Send</button>
+        </div>
+        <div class="test-note"><a href="#" onclick="clearTest();return false;" style="color:var(--cream-faint);">Clear test conversation</a></div>
+      </div>
     </div>
   </div>
 </div>
@@ -305,6 +367,86 @@ function closeDrawer() {
   document.getElementById('drawer').classList.remove('open');
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+/* ─── TABS + TRAIN ─── */
+let promptLoaded = false, testHistory = [];
+function showView(name) {
+  document.getElementById('view-activity').style.display = name === 'activity' ? '' : 'none';
+  document.getElementById('view-train').style.display = name === 'train' ? '' : 'none';
+  document.getElementById('tab-activity').classList.toggle('active', name === 'activity');
+  document.getElementById('tab-train').classList.toggle('active', name === 'train');
+  if (name === 'train' && !promptLoaded) loadPrompt();
+}
+function setSave(msg, kind) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = msg;
+  el.style.color = kind === 'err' ? 'var(--red)' : (kind === 'ok' ? 'var(--green)' : 'var(--cream-soft)');
+}
+async function loadPrompt() {
+  try {
+    const r = await fetch('/api/website-prompt', { headers: { 'X-Dashboard-Password': PASSWORD } });
+    if (r.status === 401) { logout(); return; }
+    const d = await r.json();
+    document.getElementById('promptBox').value = d.prompt || '';
+    promptLoaded = true;
+    setSave('', '');
+  } catch (e) { setSave('Could not load the prompt', 'err'); }
+}
+async function savePrompt() {
+  const prompt = document.getElementById('promptBox').value;
+  if (prompt.trim().length < 20) { setSave('Prompt is too short', 'err'); return; }
+  setSave('Saving…', '');
+  try {
+    const r = await fetch('/api/website-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dashboard-Password': PASSWORD },
+      body: JSON.stringify({ prompt }),
+    });
+    if (r.status === 401) { logout(); return; }
+    if (!r.ok) throw 0;
+    setSave('✓ Saved — live for new website chats', 'ok');
+  } catch (e) { setSave('Save failed — try again', 'err'); }
+}
+async function resetPrompt() {
+  if (!confirm('Reset the website prompt to the built-in default? Your saved changes will be lost.')) return;
+  try {
+    const r = await fetch('/api/website-prompt/reset', { method: 'POST', headers: { 'X-Dashboard-Password': PASSWORD } });
+    if (r.status === 401) { logout(); return; }
+    const d = await r.json();
+    document.getElementById('promptBox').value = d.prompt || '';
+    setSave('✓ Reset to the built-in default', 'ok');
+  } catch (e) { setSave('Reset failed', 'err'); }
+}
+function addTest(role, text) {
+  const w = document.getElementById('testMsgs');
+  const d = document.createElement('div');
+  d.className = 'tm ' + (role === 'user' ? 'user' : 'bot');
+  d.innerHTML = role === 'user' ? esc(text) : linkify(text);
+  w.appendChild(d); w.scrollTop = w.scrollHeight;
+  return d;
+}
+async function sendTest() {
+  const inp = document.getElementById('testIn');
+  const v = (inp.value || '').trim();
+  if (!v) return;
+  inp.value = '';
+  addTest('user', v);
+  testHistory.push({ role: 'user', content: v });
+  const thinking = addTest('bot', '…');
+  try {
+    // No sessionId on purpose → this test never touches visitor analytics.
+    const r = await fetch('/api/gonxhe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: 'website', test: true, messages: testHistory }),
+    });
+    const d = await r.json();
+    const text = (d.text || '').trim() || '(no reply)';
+    thinking.innerHTML = linkify(text);
+    testHistory.push({ role: 'assistant', content: text });
+    document.getElementById('testMsgs').scrollTop = document.getElementById('testMsgs').scrollHeight;
+  } catch (e) { thinking.innerHTML = 'Error contacting Gonxhe.'; }
+}
+function clearTest() { testHistory = []; document.getElementById('testMsgs').innerHTML = ''; }
 
 /* ─── BOOT ─── */
 (function () {
