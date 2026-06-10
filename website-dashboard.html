@@ -96,6 +96,23 @@ tbody tr:last-child td { border-bottom: none; }
 .status-sel.s-booked { color: var(--green); border-color: rgba(111,170,142,0.5); }
 .status-sel.s-lost { color: var(--red); border-color: rgba(178,106,106,0.45); }
 .status-sel option { background: var(--navy-panel); color: var(--cream); }
+.convo-wrap { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 760px) { .convo-wrap { grid-template-columns: 1fr; } }
+.convo-list { background: var(--navy-panel); border: 1px solid var(--navy-line); border-radius: var(--r); overflow-y: auto; max-height: 620px; }
+.convo-item { padding: 13px 15px; border-bottom: 1px solid rgba(196,169,106,0.06); cursor: pointer; transition: background .15s; }
+.convo-item:hover { background: rgba(196,169,106,0.05); }
+.convo-item.active { background: rgba(196,169,106,0.1); }
+.convo-item:last-child { border-bottom: none; }
+.ci-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ci-who { font-size: 13px; color: var(--cream); }
+.ci-when { font-size: 10.5px; color: var(--cream-faint); white-space: nowrap; }
+.ci-snip { font-size: 12px; color: var(--cream-soft); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-meta { font-size: 10.5px; color: var(--cream-faint); margin-top: 5px; }
+.convo-view { background: var(--navy-panel); border: 1px solid var(--navy-line); border-radius: var(--r); padding: 18px; min-height: 320px; max-height: 620px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.convo-view .msg { max-width: 80%; padding: 10px 13px; border-radius: 13px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+.convo-view .msg.user { align-self: flex-end; background: var(--gold-soft); border: 1px solid rgba(196,169,106,0.25); }
+.convo-view .msg.assistant { align-self: flex-start; background: var(--navy-elev); border: 1px solid var(--navy-line); }
+.convo-view .msg a { color: var(--gold-light); }
 
 /* ─── TRANSCRIPT DRAWER ─────────────────────────────── */
 .drawer-bg { position: fixed; inset: 0; background: rgba(4,8,16,0.66); backdrop-filter: blur(3px); z-index: 200; opacity: 0; pointer-events: none; transition: opacity .25s; }
@@ -181,6 +198,7 @@ tbody tr:last-child td { border-bottom: none; }
 
   <div class="tabs">
     <button class="tabbtn active" id="tab-activity" onclick="showView('activity')">Visitor Activity</button>
+    <button class="tabbtn" id="tab-convos" onclick="showView('convos')">Conversations</button>
     <button class="tabbtn" id="tab-train" onclick="showView('train')">Train Gonxhe Website</button>
   </div>
 
@@ -200,6 +218,14 @@ tbody tr:last-child td { border-bottom: none; }
     </div>
   </div>
   </div><!-- /view-activity -->
+
+  <div id="view-convos" style="display:none;">
+    <div class="section-title">All <em>conversations</em> <span class="muted" id="convoCount"></span></div>
+    <div class="convo-wrap">
+      <div class="convo-list" id="convoList"></div>
+      <div class="convo-view" id="convoView"><div class="empty">Select a conversation to read the transcript</div></div>
+    </div>
+  </div>
 
   <div id="view-train" style="display:none;">
     <div class="train-grid">
@@ -283,6 +309,7 @@ async function refresh() {
     if (r.status === 401) { logout(); return; }
     DATA = await r.json();
     render();
+    if (document.getElementById('view-convos').style.display !== 'none') renderConvos();
     document.getElementById('statusText').textContent = 'Connected';
     document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch (_) {
@@ -403,10 +430,51 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(
 let promptLoaded = false, testHistory = [];
 function showView(name) {
   document.getElementById('view-activity').style.display = name === 'activity' ? '' : 'none';
+  document.getElementById('view-convos').style.display = name === 'convos' ? '' : 'none';
   document.getElementById('view-train').style.display = name === 'train' ? '' : 'none';
   document.getElementById('tab-activity').classList.toggle('active', name === 'activity');
+  document.getElementById('tab-convos').classList.toggle('active', name === 'convos');
   document.getElementById('tab-train').classList.toggle('active', name === 'train');
+  if (name === 'convos') renderConvos();
   if (name === 'train' && !promptLoaded) loadPrompt();
+}
+
+/* ─── CONVERSATIONS ─── */
+let activeConvo = null;
+function renderConvos() {
+  const list = document.getElementById('convoList');
+  const convos = (DATA.visitors || []).filter(v => (v.transcript || []).length > 0);
+  document.getElementById('convoCount').textContent = convos.length ? '· ' + convos.length : '';
+  if (!convos.length) {
+    list.innerHTML = '<div class="empty">No website conversations yet</div>';
+    document.getElementById('convoView').innerHTML = '<div class="empty">Select a conversation to read the transcript</div>';
+    return;
+  }
+  list.innerHTML = convos.map(v => {
+    const t = v.transcript || [];
+    const last = t[t.length - 1];
+    const snip = last ? esc(String(last.content).slice(0, 90)) : '';
+    const who = v.name ? esc(v.name) : 'Anonymous';
+    return `<div class="convo-item ${activeConvo === v.sessionId ? 'active' : ''}" onclick="selectConvo('${v.sessionId}')">
+      <div class="ci-head"><div class="ci-who">${flagEmoji(v.country)} ${who}</div><div class="ci-when">${fmt(v.lastSeen)}</div></div>
+      <div class="ci-snip">${snip}</div>
+      <div class="ci-meta">${t.length} message${t.length === 1 ? '' : 's'}${v.status ? ' · ' + esc(v.status) : ''}</div>
+    </div>`;
+  }).join('');
+  if (activeConvo && convos.some(v => v.sessionId === activeConvo)) renderConvoTranscript(activeConvo);
+}
+function selectConvo(sessionId) {
+  activeConvo = sessionId;
+  renderConvos();
+}
+function renderConvoTranscript(sessionId) {
+  const v = (DATA.visitors || []).find(x => x.sessionId === sessionId);
+  const view = document.getElementById('convoView');
+  if (!v) { view.innerHTML = '<div class="empty">Conversation not found</div>'; return; }
+  const t = v.transcript || [];
+  view.innerHTML = t.length
+    ? t.map(m => `<div class="msg ${m.role === 'user' ? 'user' : 'assistant'}">${linkify(m.content)}</div>`).join('')
+    : '<div class="empty">No messages</div>';
 }
 function setSave(msg, kind) {
   const el = document.getElementById('saveStatus');
