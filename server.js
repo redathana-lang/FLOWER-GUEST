@@ -780,7 +780,7 @@ app.get('/api/web-activity', requireDashboardAuth, (_req, res) => {
 app.post('/api/web/visitor-status', requireDashboardAuth, (req, res) => {
   const { sessionId, status } = req.body || {};
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
-  const ALLOWED = ['New', 'Contacted', 'Booked', 'Lost'];
+  const ALLOWED = ['New', 'Contacted', 'Booked (WhatsApp)', 'Booked (Cloudbeds)', 'Booked', 'Lost'];
   const s = ALLOWED.indexOf(status) >= 0 ? status : 'New';
   const all = readJSON(WEB_VISITORS_FILE, {});
   if (!all[sessionId]) return res.status(404).json({ error: 'visitor not found' });
