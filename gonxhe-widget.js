@@ -385,4 +385,7 @@
   root.getElementById('gnxwClose').addEventListener('click', closePanel);
   sendBtn.addEventListener('click', send);
   input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+
+  // Track every visitor who loads the page — even if they never open the chat.
+  logVisit('landed');
 })();

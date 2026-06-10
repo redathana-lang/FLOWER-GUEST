@@ -122,7 +122,7 @@ function countryFromReq(req) {
 // the raw IP, plus the funnel flags the dashboard reports on.
 const WEB_VISITORS_FILE = 'web-visitors.json';
 function emptyFunnel() {
-  return { opened: false, messaged: false, bookingLinkShown: false,
+  return { landed: false, opened: false, messaged: false, bookingLinkShown: false,
            bookingLinkClicked: false, whatsappClicked: false, leadCaptured: false };
 }
 function upsertWebVisitor(sessionId, patch, req) {
@@ -371,6 +371,7 @@ app.post('/api/web/visit', (req, res) => {
     return res.status(400).json({ error: 'sessionId and event required' });
   }
   const EVENT_TO_FLAG = {
+    landed: 'landed',
     opened: 'opened',
     booking_link_shown: 'bookingLinkShown',
     booking_link_clicked: 'bookingLinkClicked',

@@ -84,6 +84,7 @@ tbody tr:last-child td { border-bottom: none; }
 .who-name { color: var(--cream); }
 .who-mail { color: var(--cream-soft); font-size: 11.5px; }
 .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; border: 1px solid transparent; white-space: nowrap; }
+.pill.landed   { color: var(--cream-faint); border-color: var(--navy-line); }
 .pill.opened   { color: var(--cream-soft); border-color: var(--navy-line); }
 .pill.engaged  { color: var(--amber); border-color: rgba(216,176,94,0.4); background: rgba(216,176,94,0.08); }
 .pill.shown    { color: var(--gold-light); border-color: rgba(196,169,106,0.4); background: var(--gold-soft); }
@@ -337,7 +338,8 @@ function stageOf(f) {
   if (f.bookingLinkClicked) return { cls: 'pending', label: 'Booking · pending' };
   if (f.bookingLinkShown)   return { cls: 'shown',   label: 'Got booking link' };
   if (f.messaged)           return { cls: 'engaged', label: 'Engaged' };
-  return { cls: 'opened', label: 'Opened chat' };
+  if (f.opened)             return { cls: 'opened',  label: 'Opened chat' };
+  return { cls: 'landed', label: 'Visited' };
 }
 const STATUSES = ['New', 'Contacted', 'Booked', 'Lost'];
 function statusOptions(cur) {
@@ -362,7 +364,8 @@ async function setStatus(el, sessionId) {
 function render() {
   const f = DATA.funnel || {};
   const cards = [
-    { k: 'Visitors', v: f.visitors || 0, cls: 'gold', note: 'opened the chat' },
+    { k: 'Visitors', v: f.visitors || 0, cls: 'gold', note: 'landed on the site' },
+    { k: 'Opened chat', v: f.opened || 0, note: 'engaged the bubble' },
     { k: 'Engaged', v: f.messaged || 0, note: 'sent a message' },
     { k: 'Got booking link', v: f.bookingLinkShown || 0, note: 'Gonxhe offered it' },
     { k: 'Clicked to book', v: f.bookingLinkClicked || 0, cls: 'green', note: 'opened the engine (pending)' },
