@@ -250,7 +250,7 @@
         post('/api/conversation', { sessionId: SID, channel: 'website', messages: history });
         // The moment she offers a booking link, invite a direct preferential
         // enquiry — once per session, with the dates from her link pre-filled.
-        if (!followupShown && !leadGiven && /cloudbeds\.com/i.test(text)) {
+        if (/cloudbeds\.com/i.test(text)) {
           var b = bookingFromText(text);
           if (b) lastBooking = b;
           showFollowup();
@@ -284,10 +284,16 @@
     if (followupTimer) clearTimeout(followupTimer);
     followupTimer = setTimeout(showFollowup, FOLLOWUP_MS);
   }
+  var followupEls = [];
+  function clearFollowup() {
+    followupEls.forEach(function (el) { if (el && el.parentNode) el.parentNode.removeChild(el); });
+    followupEls = [];
+  }
   function showFollowup() {
-    if (followupShown || leadGiven) return;
-    followupShown = true;
-    addMsg('bot', 'Would you like a preferential offer? 🌸 You can also contact our reservation desk directly — just fill in your details below and they\'ll reply on WhatsApp with their best price ' + datesPhrase() + '.');
+    // Always re-show after each booking link — clear any previous one first so
+    // the invite + form never stack up.
+    clearFollowup();
+    followupEls.push(addMsg('bot', 'Would you like a preferential offer? 🌸 You can also contact our reservation desk directly — just fill in your details below and they\'ll reply on WhatsApp with their best price ' + datesPhrase() + '.'));
     var ci = (lastBooking && lastBooking.checkin) || '';
     var co = (lastBooking && lastBooking.checkout) || '';
     var ad = (lastBooking && lastBooking.guests) || '2';
@@ -313,6 +319,7 @@
       '</div>' +
       '<button class="gnxw-lead-send">Send to reception on WhatsApp</button>';
     msgs.appendChild(form);
+    followupEls.push(form);
     msgs.scrollTop = msgs.scrollHeight;
     if (!panel.classList.contains('gnxw-open')) fab.classList.add('gnxw-alert');
     var sel = form.querySelector('.gnxw-cc');
@@ -369,7 +376,6 @@
           guests: u.searchParams.get('guests') || u.searchParams.get('adults') || '',
         };
       } catch (_) { lastBooking = lastBooking || {}; }
-      scheduleFollowup();
     } else if (/wa\.me/i.test(href)) {
       logVisit('whatsapp_clicked');
     }
