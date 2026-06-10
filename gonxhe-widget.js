@@ -248,6 +248,13 @@
         addMsg('bot', text);
         history.push({ role: 'assistant', content: text });
         post('/api/conversation', { sessionId: SID, channel: 'website', messages: history });
+        // The moment she offers a booking link, invite a direct preferential
+        // enquiry — once per session, with the dates from her link pre-filled.
+        if (!followupShown && !leadGiven && /cloudbeds\.com/i.test(text)) {
+          var b = bookingFromText(text);
+          if (b) lastBooking = b;
+          showFollowup();
+        }
       })
       .catch(function () { typing.remove(); addMsg('bot', ERR_MSG); })
       .then(function () { sending = false; sendBtn.disabled = false; input.focus(); });
@@ -259,6 +266,19 @@
     }
     return 'for your dates';
   }
+  // Pull the dates/guests out of a Cloudbeds link inside one of Gonxhe's replies.
+  function bookingFromText(text) {
+    var m = String(text || '').match(/https?:\/\/hotels\.cloudbeds\.com\/[^\s)]+/i);
+    if (!m) return null;
+    try {
+      var u = new URL(m[0]);
+      return {
+        checkin: u.searchParams.get('checkin') || '',
+        checkout: u.searchParams.get('checkout') || '',
+        guests: u.searchParams.get('guests') || u.searchParams.get('adults') || '',
+      };
+    } catch (e) { return {}; }
+  }
   function scheduleFollowup() {
     if (followupShown || leadGiven) return;
     if (followupTimer) clearTimeout(followupTimer);
@@ -267,9 +287,11 @@
   function showFollowup() {
     if (followupShown || leadGiven) return;
     followupShown = true;
-    addMsg('bot', 'Still deciding? 🌸 Leave your details below and our reception team will send you the best available offer ' + datesPhrase() + ' on WhatsApp — no obligation.');
+    addMsg('bot', 'Would you like a preferential offer? 🌸 You can also contact our reservation desk directly — just fill in your details below and they\'ll reply on WhatsApp with their best price ' + datesPhrase() + '.');
     var ci = (lastBooking && lastBooking.checkin) || '';
     var co = (lastBooking && lastBooking.checkout) || '';
+    var ad = (lastBooking && lastBooking.guests) || '2';
+    var kd = '0';
     var form = document.createElement('div');
     form.className = 'gnxw-lead';
     var opts = DIAL_CODES.map(function (c) {
@@ -285,6 +307,10 @@
         '<label class="gnxw-dl">Check-in<input class="gnxw-ci" type="date" value="' + ci + '" /></label>' +
         '<label class="gnxw-dl">Check-out<input class="gnxw-co" type="date" value="' + co + '" /></label>' +
       '</div>' +
+      '<div class="gnxw-lead-row">' +
+        '<label class="gnxw-dl">Adults<input class="gnxw-ad" type="number" min="1" value="' + ad + '" /></label>' +
+        '<label class="gnxw-dl">Children<input class="gnxw-kd" type="number" min="0" value="' + kd + '" /></label>' +
+      '</div>' +
       '<button class="gnxw-lead-send">Send to reception on WhatsApp</button>';
     msgs.appendChild(form);
     msgs.scrollTop = msgs.scrollHeight;
@@ -294,6 +320,8 @@
     var nameEl = form.querySelector('.gnxw-name');
     var ciEl = form.querySelector('.gnxw-ci');
     var coEl = form.querySelector('.gnxw-co');
+    var adEl = form.querySelector('.gnxw-ad');
+    var kdEl = form.querySelector('.gnxw-kd');
     var btn = form.querySelector('.gnxw-lead-send');
     function submitLead() {
       var digits = (num.value || '').replace(/[^0-9]/g, '');
@@ -301,19 +329,20 @@
       var phone = sel.value + digits;
       var nm = (nameEl.value || '').trim();
       var cin = ciEl.value || '', cout = coEl.value || '';
+      var adv = (adEl.value || '').trim(), kdv = (kdEl.value || '').trim();
       leadGiven = true;
       if (followupTimer) clearTimeout(followupTimer);
       // Record it in the dashboard too (non-blocking) so reception sees it there.
-      post('/api/web/lead', { sessionId: SID, name: nm, phone: phone, checkin: cin, checkout: cout, guests: lastBooking && lastBooking.guests });
+      post('/api/web/lead', { sessionId: SID, name: nm, phone: phone, checkin: cin, checkout: cout, adults: adv, kids: kdv });
       // Compose the enquiry as a WhatsApp message to the reservation desk.
       var lines = [
         'New booking enquiry from the website',
         'Name: ' + (nm || '—'),
         'WhatsApp: ' + phone,
         'Check-in: ' + (cin || '—'),
-        'Check-out: ' + (cout || '—')
+        'Check-out: ' + (cout || '—'),
+        'Adults: ' + (adv || '—') + ', Children: ' + (kdv || '0')
       ];
-      if (lastBooking && lastBooking.guests) lines.push('Guests: ' + lastBooking.guests);
       lines.push('Please send me the best available offer for these dates. Thank you!');
       var wa = 'https://wa.me/' + RESERVATION_WA + '?text=' + encodeURIComponent(lines.join('\n'));
       form.remove();

@@ -378,7 +378,12 @@ function openDrawer(i) {
   const bits = [st.label];
   if (v.email) bits.push(esc(v.email));
   if (v.phone) bits.push('WhatsApp ' + esc(v.phone));
-  if (v.interestCheckin && v.interestCheckout) bits.push('Interested: ' + esc(v.interestCheckin) + ' → ' + esc(v.interestCheckout) + (v.interestGuests ? ' · ' + esc(v.interestGuests) + ' guests' : ''));
+  if (v.interestCheckin && v.interestCheckout) {
+    const pax = v.interestAdults
+      ? (esc(v.interestAdults) + ' adults' + (v.interestKids && v.interestKids !== '0' ? ', ' + esc(v.interestKids) + ' kids' : ''))
+      : (v.interestGuests ? esc(v.interestGuests) + ' guests' : '');
+    bits.push('Interested: ' + esc(v.interestCheckin) + ' → ' + esc(v.interestCheckout) + (pax ? ' · ' + pax : ''));
+  }
   bits.push('Last seen ' + fmt(v.lastSeen));
   document.getElementById('drawerSub').innerHTML = bits.join(' · ');
   const t = v.transcript || [];

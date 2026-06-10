@@ -385,7 +385,7 @@ app.post('/api/web/visit', (req, res) => {
 // A pending visitor (clicked the booking engine) leaves a WhatsApp number so
 // reception can offer them the best rate for the dates they were viewing.
 app.post('/api/web/lead', (req, res) => {
-  const { sessionId, name, phone, checkin, checkout, guests } = req.body || {};
+  const { sessionId, name, phone, checkin, checkout, adults, kids } = req.body || {};
   if (!sessionId || !phone) {
     return res.status(400).json({ error: 'sessionId and phone required' });
   }
@@ -395,15 +395,19 @@ app.post('/api/web/lead', (req, res) => {
     phone: cleanPhone,
     interestCheckin: String(checkin || '').slice(0, 12),
     interestCheckout: String(checkout || '').slice(0, 12),
-    interestGuests: String(guests || '').slice(0, 8),
+    interestAdults: String(adults || '').slice(0, 4),
+    interestKids: String(kids || '').slice(0, 4),
     funnel: { leadCaptured: true },
   }, req);
   const dates = (checkin && checkout) ? (checkin + ' → ' + checkout) : '';
+  const pax = (adults || kids)
+    ? (String(adults || '?') + ' adults' + ((kids && kids !== '0') ? (', ' + kids + ' kids') : ''))
+    : '';
   try {
     appendItem('events.json', {
       id: crypto.randomUUID(), ts: new Date().toISOString(),
       room: '—', type: 'web_lead_whatsapp',
-      detail: ['WhatsApp ' + cleanPhone, dates ? ('dates ' + dates) : '', guests ? (guests + ' guests') : '']
+      detail: ['WhatsApp ' + cleanPhone, dates ? ('dates ' + dates) : '', pax]
         .filter(Boolean).join(' · ').slice(0, 280),
       guest: name ? String(name).slice(0, 80) : '', sessionId: sessionId || '', channel: 'website',
     });
