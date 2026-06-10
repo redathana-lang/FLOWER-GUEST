@@ -381,6 +381,36 @@ app.post('/api/web/visit', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── WEBSITE WHATSAPP LEAD (from the 5-min follow-up form) ────────────────
+// A pending visitor (clicked the booking engine) leaves a WhatsApp number so
+// reception can offer them the best rate for the dates they were viewing.
+app.post('/api/web/lead', (req, res) => {
+  const { sessionId, name, phone, checkin, checkout, guests } = req.body || {};
+  if (!sessionId || !phone) {
+    return res.status(400).json({ error: 'sessionId and phone required' });
+  }
+  const cleanPhone = String(phone).slice(0, 40);
+  upsertWebVisitor(sessionId, {
+    ...(name ? { name: String(name).slice(0, 80) } : {}),
+    phone: cleanPhone,
+    interestCheckin: String(checkin || '').slice(0, 12),
+    interestCheckout: String(checkout || '').slice(0, 12),
+    interestGuests: String(guests || '').slice(0, 8),
+    funnel: { leadCaptured: true },
+  }, req);
+  const dates = (checkin && checkout) ? (checkin + ' → ' + checkout) : '';
+  try {
+    appendItem('events.json', {
+      id: crypto.randomUUID(), ts: new Date().toISOString(),
+      room: '—', type: 'web_lead_whatsapp',
+      detail: ['WhatsApp ' + cleanPhone, dates ? ('dates ' + dates) : '', guests ? (guests + ' guests') : '']
+        .filter(Boolean).join(' · ').slice(0, 280),
+      guest: name ? String(name).slice(0, 80) : '', sessionId: sessionId || '', channel: 'website',
+    });
+  } catch (e) { console.error('web lead log failed', e); }
+  res.json({ ok: true });
+});
+
 // ─── GONXHE BOOKING TOOL ─────────────────────────────────────────────────
 // Reception WhatsApp (digits only, for wa.me). Mirrors WA_PHONE in index.html.
 const RECEPTION_WA = '355692073380';
@@ -727,6 +757,20 @@ app.get('/api/web-activity', requireDashboardAuth, (_req, res) => {
     if (f.leadCaptured) funnel.leadCaptured++;
   }
   res.json({ visitors, funnel });
+});
+
+// ─── WEBSITE VISITOR STATUS (reception pipeline, dashboard-only) ──────────
+// Lets reception track each enquiry: New → Contacted → Booked → Lost.
+app.post('/api/web/visitor-status', requireDashboardAuth, (req, res) => {
+  const { sessionId, status } = req.body || {};
+  if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+  const ALLOWED = ['New', 'Contacted', 'Booked', 'Lost'];
+  const s = ALLOWED.indexOf(status) >= 0 ? status : 'New';
+  const all = readJSON(WEB_VISITORS_FILE, {});
+  if (!all[sessionId]) return res.status(404).json({ error: 'visitor not found' });
+  all[sessionId].status = s;            // does not touch lastSeen / funnel
+  writeJSON(WEB_VISITORS_FILE, all);
+  res.json({ ok: true, status: s });
 });
 
 // ─── WEBSITE SYSTEM PROMPT (Train Gonxhe · Website) ───────────────────────

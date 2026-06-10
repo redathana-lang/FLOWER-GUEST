@@ -51,6 +51,24 @@
 
   var history = [], opened = false, sending = false, turns = 0;
 
+  // Follow-up: 5 minutes after a visitor clicks the booking engine, if they
+  // haven't left a number, ask for their WhatsApp so reception can help.
+  var FOLLOWUP_MS = 5 * 60 * 1000; // 5 minutes after the booking-engine click
+  var RESERVATION_WA = '355676040707'; // Flower reservation desk (+355 67 604 0707)
+  var lastBooking = null, followupTimer = null, followupShown = false, leadGiven = false;
+  var DIAL_CODES = [
+    ['Albania', '+355'], ['Kosovo', '+383'], ['North Macedonia', '+389'], ['Montenegro', '+382'],
+    ['Italy', '+39'], ['Germany', '+49'], ['United Kingdom', '+44'], ['Austria', '+43'], ['Switzerland', '+41'],
+    ['France', '+33'], ['Greece', '+30'], ['Netherlands', '+31'], ['Belgium', '+32'], ['Spain', '+34'],
+    ['Poland', '+48'], ['Sweden', '+46'], ['Norway', '+47'], ['Denmark', '+45'], ['Finland', '+358'],
+    ['Czechia', '+420'], ['Hungary', '+36'], ['Romania', '+40'], ['Bulgaria', '+359'], ['Croatia', '+385'],
+    ['Slovenia', '+386'], ['Serbia', '+381'], ['Bosnia & Herzegovina', '+387'], ['Turkey', '+90'],
+    ['Ukraine', '+380'], ['Russia', '+7'], ['Ireland', '+353'], ['Portugal', '+351'], ['Luxembourg', '+352'],
+    ['United States / Canada', '+1'], ['United Arab Emirates', '+971'], ['Saudi Arabia', '+966'],
+    ['Qatar', '+974'], ['Kuwait', '+965'], ['Israel', '+972'], ['Australia', '+61'], ['China', '+86'],
+    ['Japan', '+81'], ['India', '+91'], ['Brazil', '+55']
+  ];
+
   // ── Beacon helpers (never throw, never block the UI) ───────────────────
   function post(path, body) {
     try {
@@ -133,6 +151,20 @@
   .gnxw-send { flex: 0 0 auto; width: 44px; border: none; border-radius: 12px; background: linear-gradient(135deg,#C4A96A,#D8C08E); color: #070E1B; cursor: pointer; font-size: 18px; }\
   .gnxw-send:hover { filter: brightness(1.05); } .gnxw-send:disabled { opacity: .5; cursor: default; }\
   .gnxw-foot { text-align: center; font-size: 10px; color: rgba(42,37,32,0.4); padding: 0 0 8px; background: #FFFFFF; }\
+  .gnxw-fab.gnxw-alert { animation: gnxw-alert 1.3s ease-in-out infinite; }\
+  @keyframes gnxw-alert { 0%,100% { transform: scale(1); } 50% { transform: scale(1.09); } }\
+  .gnxw-lead { align-self: stretch; background: #FFFFFF; border: 1px solid rgba(196,169,106,0.4); border-radius: 13px; padding: 13px; }\
+  .gnxw-lead-row { display: flex; gap: 7px; margin-bottom: 9px; }\
+  .gnxw-cc { flex: 0 0 128px; border: 1px solid rgba(196,169,106,0.35); border-radius: 9px; padding: 9px 8px; font-size: 13px; font-family: inherit; color: #2A2520; background: #FBF8F2; outline: none; }\
+  .gnxw-num { flex: 1; min-width: 0; border: 1px solid rgba(196,169,106,0.35); border-radius: 9px; padding: 9px 11px; font-size: 14px; font-family: inherit; color: #2A2520; background: #FBF8F2; outline: none; }\
+  .gnxw-cc:focus, .gnxw-num:focus { border-color: #C4A96A; }\
+  .gnxw-lead-send { width: 100%; border: none; border-radius: 9px; padding: 11px; background: linear-gradient(135deg,#C4A96A,#D8C08E); color: #070E1B; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; }\
+  .gnxw-lead-send:hover { filter: brightness(1.05); } .gnxw-lead-send:disabled { opacity: .55; cursor: default; }\
+  .gnxw-name { width: 100%; border: 1px solid rgba(196,169,106,0.35); border-radius: 9px; padding: 9px 11px; font-size: 14px; font-family: inherit; color: #2A2520; background: #FBF8F2; outline: none; margin-bottom: 9px; }\
+  .gnxw-name:focus { border-color: #C4A96A; }\
+  .gnxw-dl { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: rgba(42,37,32,0.6); }\
+  .gnxw-dl input { border: 1px solid rgba(196,169,106,0.35); border-radius: 9px; padding: 8px 10px; font-size: 13px; font-family: inherit; color: #2A2520; background: #FBF8F2; outline: none; }\
+  .gnxw-dl input:focus { border-color: #C4A96A; }\
   @media (max-width: 480px) {\
     .gnxw-panel { bottom: 0; right: 0; width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; border: none; }\
     .gnxw-fab { bottom: 18px; right: 18px; }\
@@ -185,6 +217,7 @@
   function openPanel() {
     panel.classList.add('gnxw-open');
     fab.classList.add('gnxw-hide');
+    fab.classList.remove('gnxw-alert');
     if (!opened) { opened = true; logVisit('opened'); addMsg('bot', GREETING); }
     setTimeout(function () { input.focus(); }, 300);
   }
@@ -220,13 +253,97 @@
       .then(function () { sending = false; sendBtn.disabled = false; input.focus(); });
   }
 
+  function datesPhrase() {
+    if (lastBooking && lastBooking.checkin && lastBooking.checkout) {
+      return 'for ' + lastBooking.checkin + ' to ' + lastBooking.checkout;
+    }
+    return 'for your dates';
+  }
+  function scheduleFollowup() {
+    if (followupShown || leadGiven) return;
+    if (followupTimer) clearTimeout(followupTimer);
+    followupTimer = setTimeout(showFollowup, FOLLOWUP_MS);
+  }
+  function showFollowup() {
+    if (followupShown || leadGiven) return;
+    followupShown = true;
+    addMsg('bot', 'Still deciding? 🌸 Leave your details below and our reception team will send you the best available offer ' + datesPhrase() + ' on WhatsApp — no obligation.');
+    var ci = (lastBooking && lastBooking.checkin) || '';
+    var co = (lastBooking && lastBooking.checkout) || '';
+    var form = document.createElement('div');
+    form.className = 'gnxw-lead';
+    var opts = DIAL_CODES.map(function (c) {
+      return '<option value="' + c[1] + '">' + c[1] + '  ' + c[0] + '</option>';
+    }).join('');
+    form.innerHTML =
+      '<div class="gnxw-lead-row">' +
+        '<select class="gnxw-cc" aria-label="Country code">' + opts + '</select>' +
+        '<input class="gnxw-num" type="tel" inputmode="tel" placeholder="WhatsApp number" />' +
+      '</div>' +
+      '<input class="gnxw-name" type="text" placeholder="Your name" />' +
+      '<div class="gnxw-lead-row">' +
+        '<label class="gnxw-dl">Check-in<input class="gnxw-ci" type="date" value="' + ci + '" /></label>' +
+        '<label class="gnxw-dl">Check-out<input class="gnxw-co" type="date" value="' + co + '" /></label>' +
+      '</div>' +
+      '<button class="gnxw-lead-send">Send to reception on WhatsApp</button>';
+    msgs.appendChild(form);
+    msgs.scrollTop = msgs.scrollHeight;
+    if (!panel.classList.contains('gnxw-open')) fab.classList.add('gnxw-alert');
+    var sel = form.querySelector('.gnxw-cc');
+    var num = form.querySelector('.gnxw-num');
+    var nameEl = form.querySelector('.gnxw-name');
+    var ciEl = form.querySelector('.gnxw-ci');
+    var coEl = form.querySelector('.gnxw-co');
+    var btn = form.querySelector('.gnxw-lead-send');
+    function submitLead() {
+      var digits = (num.value || '').replace(/[^0-9]/g, '');
+      if (digits.length < 5) { num.style.borderColor = '#B26A6A'; num.focus(); return; }
+      var phone = sel.value + digits;
+      var nm = (nameEl.value || '').trim();
+      var cin = ciEl.value || '', cout = coEl.value || '';
+      leadGiven = true;
+      if (followupTimer) clearTimeout(followupTimer);
+      // Record it in the dashboard too (non-blocking) so reception sees it there.
+      post('/api/web/lead', { sessionId: SID, name: nm, phone: phone, checkin: cin, checkout: cout, guests: lastBooking && lastBooking.guests });
+      // Compose the enquiry as a WhatsApp message to the reservation desk.
+      var lines = [
+        'New booking enquiry from the website',
+        'Name: ' + (nm || '—'),
+        'WhatsApp: ' + phone,
+        'Check-in: ' + (cin || '—'),
+        'Check-out: ' + (cout || '—')
+      ];
+      if (lastBooking && lastBooking.guests) lines.push('Guests: ' + lastBooking.guests);
+      lines.push('Please send me the best available offer for these dates. Thank you!');
+      var wa = 'https://wa.me/' + RESERVATION_WA + '?text=' + encodeURIComponent(lines.join('\n'));
+      form.remove();
+      addMsg('bot', 'Perfect — your enquiry is ready for our reception team. Tap below to send it on WhatsApp and they\'ll reply with the best offer ' + datesPhrase() + '. 🌸\n\n[📲 Send to reception on WhatsApp](' + wa + ')');
+      try { window.open(wa, '_blank'); } catch (e) {}
+    }
+    btn.addEventListener('click', submitLead);
+    num.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submitLead(); } });
+  }
+
   // Funnel: catch booking-engine & WhatsApp clicks before they navigate away.
+  // A booking-engine click also arms the 5-minute WhatsApp follow-up.
   msgs.addEventListener('click', function (e) {
     var a = e.target && e.target.closest ? e.target.closest('a') : null;
     if (!a) return;
     var href = a.getAttribute('href') || '';
-    if (/cloudbeds\.com/i.test(href)) logVisit('booking_link_clicked');
-    else if (/wa\.me/i.test(href)) logVisit('whatsapp_clicked');
+    if (/cloudbeds\.com/i.test(href)) {
+      logVisit('booking_link_clicked');
+      try {
+        var u = new URL(a.href);
+        lastBooking = {
+          checkin: u.searchParams.get('checkin') || '',
+          checkout: u.searchParams.get('checkout') || '',
+          guests: u.searchParams.get('guests') || u.searchParams.get('adults') || '',
+        };
+      } catch (_) { lastBooking = lastBooking || {}; }
+      scheduleFollowup();
+    } else if (/wa\.me/i.test(href)) {
+      logVisit('whatsapp_clicked');
+    }
   });
 
   fab.addEventListener('click', openPanel);

@@ -90,6 +90,12 @@ tbody tr:last-child td { border-bottom: none; }
 .pill.pending  { color: var(--green); border-color: rgba(111,170,142,0.45); background: rgba(111,170,142,0.1); }
 .pill.lead     { color: var(--navy); background: linear-gradient(135deg, var(--gold), var(--gold-light)); }
 .empty { padding: 44px 20px; text-align: center; color: var(--cream-faint); font-style: italic; font-family: 'Playfair Display', serif; }
+.status-sel { background: var(--navy); border: 1px solid var(--navy-line); color: var(--cream-soft); border-radius: 7px; padding: 5px 8px; font-family: 'Jost', sans-serif; font-size: 11.5px; cursor: pointer; outline: none; }
+.status-sel:focus { border-color: rgba(196,169,106,0.5); }
+.status-sel.s-contacted { color: var(--amber); border-color: rgba(216,176,94,0.45); }
+.status-sel.s-booked { color: var(--green); border-color: rgba(111,170,142,0.5); }
+.status-sel.s-lost { color: var(--red); border-color: rgba(178,106,106,0.45); }
+.status-sel option { background: var(--navy-panel); color: var(--cream); }
 
 /* ─── TRANSCRIPT DRAWER ─────────────────────────────── */
 .drawer-bg { position: fixed; inset: 0; background: rgba(4,8,16,0.66); backdrop-filter: blur(3px); z-index: 200; opacity: 0; pointer-events: none; transition: opacity .25s; }
@@ -187,7 +193,7 @@ tbody tr:last-child td { border-bottom: none; }
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>Country</th><th>Visitor</th><th>Stage</th><th>Msgs</th><th>First seen</th><th>Last seen</th></tr>
+          <tr><th>Country</th><th>Visitor</th><th>Stage</th><th>Status</th><th>Msgs</th><th>First seen</th><th>Last seen</th></tr>
         </thead>
         <tbody id="visitorRows"></tbody>
       </table>
@@ -306,6 +312,24 @@ function stageOf(f) {
   if (f.messaged)           return { cls: 'engaged', label: 'Engaged' };
   return { cls: 'opened', label: 'Opened chat' };
 }
+const STATUSES = ['New', 'Contacted', 'Booked', 'Lost'];
+function statusOptions(cur) {
+  const c = cur || 'New';
+  return STATUSES.map(s => `<option value="${s}"${s === c ? ' selected' : ''}>${s}</option>`).join('');
+}
+async function setStatus(el, sessionId) {
+  const status = el.value;
+  el.className = 'status-sel s-' + status.toLowerCase();
+  const v = (DATA.visitors || []).find(x => x.sessionId === sessionId);
+  if (v) v.status = status;   // keep local copy so the 20s refresh doesn't flicker it back
+  try {
+    await fetch('/api/web/visitor-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dashboard-Password': PASSWORD },
+      body: JSON.stringify({ sessionId, status }),
+    });
+  } catch (e) {}
+}
 
 /* ─── RENDER ─── */
 function render() {
@@ -326,7 +350,7 @@ function render() {
   document.getElementById('visitorCount').textContent = vs.length ? '· ' + vs.length : '';
   const body = document.getElementById('visitorRows');
   if (!vs.length) {
-    body.innerHTML = '<tr><td colspan="6"><div class="empty">No website visitors yet</div></td></tr>';
+    body.innerHTML = '<tr><td colspan="7"><div class="empty">No website visitors yet</div></td></tr>';
     return;
   }
   body.innerHTML = vs.map((v, i) => {
@@ -337,6 +361,7 @@ function render() {
       <td><span class="flag">${flagEmoji(v.country)}</span><span class="muted">${v.country || '—'}</span></td>
       <td>${name}${mail}</td>
       <td><span class="pill ${st.cls}">${st.label}</span></td>
+      <td onclick="event.stopPropagation()"><select class="status-sel s-${(v.status || 'New').toLowerCase()}" onchange="setStatus(this, '${v.sessionId}')">${statusOptions(v.status)}</select></td>
       <td>${v.messages || (v.transcript ? Math.ceil(v.transcript.length / 2) : 0)}</td>
       <td class="muted">${fmt(v.firstSeen)}</td>
       <td class="muted">${fmt(v.lastSeen)}</td>
@@ -352,7 +377,8 @@ function openDrawer(i) {
   document.getElementById('drawerTitle').innerHTML = `${flagEmoji(v.country)} ${esc(v.name || 'Anonymous visitor')}`;
   const bits = [st.label];
   if (v.email) bits.push(esc(v.email));
-  if (v.phone) bits.push(esc(v.phone));
+  if (v.phone) bits.push('WhatsApp ' + esc(v.phone));
+  if (v.interestCheckin && v.interestCheckout) bits.push('Interested: ' + esc(v.interestCheckin) + ' → ' + esc(v.interestCheckout) + (v.interestGuests ? ' · ' + esc(v.interestGuests) + ' guests' : ''));
   bits.push('Last seen ' + fmt(v.lastSeen));
   document.getElementById('drawerSub').innerHTML = bits.join(' · ');
   const t = v.transcript || [];
