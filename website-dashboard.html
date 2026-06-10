@@ -70,6 +70,24 @@ em { font-family: 'Playfair Display', serif; font-style: italic; color: var(--go
 .card.green .v { color: var(--green); }
 .card.amber .v { color: var(--amber); }
 
+/* ─── NATIONALITY + DAILY ───────────────────────────── */
+.acts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .acts-grid { grid-template-columns: 1fr; } }
+.nat-row { display: flex; align-items: center; gap: 10px; padding: 8px 15px; }
+.nat-row .flag { font-size: 16px; }
+.nat-row .nm { width: 104px; font-size: 12.5px; color: var(--cream-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nat-row .bar { flex: 1; height: 8px; background: var(--navy); border-radius: 4px; overflow: hidden; }
+.nat-row .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--gold-deep), var(--gold)); }
+.nat-row .ct { width: 30px; text-align: right; font-size: 12.5px; color: var(--cream); }
+.day-chart { display: flex; align-items: flex-end; gap: 4px; padding: 14px 14px 12px; height: 158px; }
+.day-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
+.day-col .dv { font-size: 10px; color: var(--cream-soft); min-height: 13px; }
+.day-col .db { width: 100%; max-width: 20px; background: linear-gradient(180deg, var(--gold), var(--gold-deep)); border-radius: 3px 3px 0 0; min-height: 2px; }
+.day-col .dl { font-size: 9px; color: var(--cream-faint); }
+.drawer-pages { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--navy-line); }
+.dp-h { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--cream-faint); margin-bottom: 7px; }
+.dp-i { font-size: 12px; color: var(--cream-mid); padding: 3px 0; font-family: ui-monospace, monospace; word-break: break-all; }
+
 /* ─── TABLE ─────────────────────────────────────────── */
 .panel { background: var(--navy-panel); border: 1px solid var(--navy-line); border-radius: var(--r); overflow: hidden; }
 .tbl-wrap { overflow-x: auto; }
@@ -207,7 +225,18 @@ tbody tr:last-child td { border-bottom: none; }
   <div class="section-title">The <em>funnel</em></div>
   <div class="cards" id="funnelCards"></div>
 
-  <div class="section-title">Visitors <span class="muted" id="visitorCount"></span></div>
+  <div class="acts-grid" style="margin-top:24px;">
+    <div>
+      <div class="section-title">Where <em>they're from</em></div>
+      <div class="panel" id="natPanel"><div class="empty">No data yet</div></div>
+    </div>
+    <div>
+      <div class="section-title">Visitors <em>per day</em></div>
+      <div class="panel" id="dailyPanel"><div class="empty">No data yet</div></div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:24px;">Visitors <span class="muted" id="visitorCount"></span></div>
   <div class="panel">
     <div class="tbl-wrap">
       <table>
@@ -323,6 +352,45 @@ function flagEmoji(iso) {
   if (!iso || !/^[A-Za-z]{2}$/.test(iso)) return '🌐';
   return iso.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
 }
+let _regionNames = null;
+function countryName(iso) {
+  if (!iso || !/^[A-Za-z]{2}$/.test(iso)) return 'Unknown';
+  try { if (!_regionNames) _regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); return _regionNames.of(iso.toUpperCase()) || iso.toUpperCase(); }
+  catch (e) { return iso.toUpperCase(); }
+}
+function hostOf(url) { try { return new URL(url).hostname || url; } catch (e) { return url; } }
+function renderBreakdown() {
+  const vs = DATA.visitors || [];
+  const counts = {};
+  vs.forEach(v => { const c = (v.country || '').toUpperCase() || '—'; counts[c] = (counts[c] || 0) + 1; });
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const max = rows.length ? rows[0][1] : 1;
+  const el = document.getElementById('natPanel');
+  if (!rows.length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
+  el.innerHTML = rows.map(([c, n]) =>
+    `<div class="nat-row"><span class="flag">${flagEmoji(c === '—' ? '' : c)}</span><span class="nm">${c === '—' ? 'Unknown' : esc(countryName(c))}</span><span class="bar"><span style="width:${Math.round(n / max * 100)}%"></span></span><span class="ct">${n}</span></div>`
+  ).join('');
+}
+function dayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function renderDaily() {
+  const vs = DATA.visitors || [];
+  const days = 14;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const buckets = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    buckets.push({ key: dayKey(d), label: String(d.getDate()), n: 0 });
+  }
+  const idx = {}; buckets.forEach((b, i) => { idx[b.key] = i; });
+  vs.forEach(v => { if (!v.firstSeen) return; const k = dayKey(new Date(v.firstSeen)); if (k in idx) buckets[idx[k]].n++; });
+  const max = Math.max(1, ...buckets.map(b => b.n));
+  const el = document.getElementById('dailyPanel');
+  el.innerHTML = '<div class="day-chart">' + buckets.map(b =>
+    `<div class="day-col" title="${b.key}: ${b.n} new"><div class="dv">${b.n || ''}</div><div class="db" style="height:${Math.round(b.n / max * 100)}%"></div><div class="dl">${b.label}</div></div>`
+  ).join('') + '</div>';
+}
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 function linkify(s) {
   return esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
@@ -375,6 +443,8 @@ function render() {
   document.getElementById('funnelCards').innerHTML = cards.map(c =>
     `<div class="card ${c.cls || ''}"><div class="k">${c.k}</div><div class="v">${c.v}</div><div class="note">${c.note}</div></div>`
   ).join('');
+  renderBreakdown();
+  renderDaily();
 
   const vs = DATA.visitors || [];
   document.getElementById('visitorCount').textContent = vs.length ? '· ' + vs.length : '';
@@ -414,12 +484,17 @@ function openDrawer(i) {
       : (v.interestGuests ? esc(v.interestGuests) + ' guests' : '');
     bits.push('Interested: ' + esc(v.interestCheckin) + ' → ' + esc(v.interestCheckout) + (pax ? ' · ' + pax : ''));
   }
+  if (v.referrer) bits.push('from ' + esc(hostOf(v.referrer)));
   bits.push('Last seen ' + fmt(v.lastSeen));
   document.getElementById('drawerSub').innerHTML = bits.join(' · ');
+  const pagesHtml = (v.pages && v.pages.length)
+    ? '<div class="drawer-pages"><div class="dp-h">Pages viewed (' + v.pages.length + ') · ' + (v.referrer ? 'from ' + esc(hostOf(v.referrer)) : 'direct visit') + '</div>' + v.pages.map(p => '<div class="dp-i">' + esc(p) + '</div>').join('') + '</div>'
+    : '';
   const t = v.transcript || [];
-  document.getElementById('drawerBody').innerHTML = t.length
+  const transHtml = t.length
     ? t.map(m => `<div class="msg ${m.role === 'user' ? 'user' : 'assistant'}">${linkify(m.content)}</div>`).join('')
-    : '<div class="empty">No transcript on record</div>';
+    : (pagesHtml ? '' : '<div class="empty">No transcript on record</div>');
+  document.getElementById('drawerBody').innerHTML = pagesHtml + transHtml;
   document.getElementById('drawerBg').classList.add('open');
   document.getElementById('drawer').classList.add('open');
 }

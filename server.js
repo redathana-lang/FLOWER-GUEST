@@ -136,9 +136,16 @@ function upsertWebVisitor(sessionId, patch, req) {
     messages: 0, funnel: emptyFunnel(), firstSeen: now,
   };
   if (!prev.country && req) prev.country = countryFromReq(req);
-  const { incMessages, funnel: patchFunnel, ...rest } = patch || {};
+  const { incMessages, funnel: patchFunnel, __page, __ref, ...rest } = patch || {};
   const next = { ...prev, ...rest, lastSeen: now };
   if (incMessages) next.messages = (prev.messages || 0) + 1;
+  if (__ref && !next.referrer) next.referrer = __ref;       // first (landing) referrer only
+  if (__page) {
+    next.pages = (prev.pages || []).slice();
+    if (next.pages[next.pages.length - 1] !== __page) next.pages.push(__page);
+    while (next.pages.length > 30) next.pages.shift();
+    if (!next.landingPage) next.landingPage = __page;
+  }
   next.funnel = { ...emptyFunnel(), ...prev.funnel, ...(patchFunnel || {}) };
   all[sessionId] = next;
   const keys = Object.keys(all);
@@ -378,7 +385,11 @@ app.post('/api/web/visit', (req, res) => {
     whatsapp_clicked: 'whatsappClicked',
   };
   const flag = EVENT_TO_FLAG[event];
-  upsertWebVisitor(sessionId, { funnel: flag ? { [flag]: true } : {} }, req);
+  const { page, ref } = req.body || {};
+  const patch = { funnel: flag ? { [flag]: true } : {} };
+  if (page) patch.__page = String(page).slice(0, 200);
+  if (ref) patch.__ref = String(ref).slice(0, 300);
+  upsertWebVisitor(sessionId, patch, req);
   res.json({ ok: true });
 });
 

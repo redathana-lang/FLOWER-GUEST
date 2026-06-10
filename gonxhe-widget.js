@@ -78,7 +78,7 @@
       }).catch(function () {});
     } catch (e) {}
   }
-  function logVisit(ev) { post('/api/web/visit', { sessionId: SID, event: ev }); }
+  function logVisit(ev, extra) { post('/api/web/visit', Object.assign({ sessionId: SID, event: ev }, extra || {})); }
 
   function esc(s) {
     return String(s == null ? '' : s)
@@ -386,6 +386,7 @@
   sendBtn.addEventListener('click', send);
   input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
 
-  // Track every visitor who loads the page — even if they never open the chat.
-  logVisit('landed');
+  // Track every visitor who loads the page — even if they never open the chat —
+  // along with which page they're on and where they came from.
+  logVisit('landed', { page: location.pathname + location.search, ref: document.referrer || '' });
 })();
