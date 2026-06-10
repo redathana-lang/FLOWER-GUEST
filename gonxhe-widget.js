@@ -27,6 +27,7 @@
     try { return new URL(thisScript.src).origin; }
     catch (e) { return 'https://flower-guest.onrender.com'; }
   })();
+  var AVATAR = API_BASE + '/gonxhe-avatar.jpg';
 
   // ── Stable anonymous session id (persists across page loads) ───────────
   var SID = (function () {
@@ -95,6 +96,7 @@
   .gnxw-fab.gnxw-hide { transform: scale(0); pointer-events: none; }\
   .gnxw-mono { font-style: italic; font-weight: 600; font-size: 27px;\
     background: linear-gradient(135deg,#C4A96A,#E2CE9A); -webkit-background-clip: text; background-clip: text; color: transparent; }\
+  .gnxw-fab-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }\
   .gnxw-ping { position: absolute; top: 4px; right: 6px; width: 11px; height: 11px; border-radius: 50%; background: #6FAA8E; border: 2px solid #070E1B; }\
   .gnxw-panel { position: fixed; bottom: 24px; right: 24px; width: 374px; max-width: calc(100vw - 32px); height: 560px; max-height: calc(100vh - 48px);\
     background: #FBF8F2; border-radius: 20px; overflow: hidden; z-index: 2147483000; display: flex; flex-direction: column;\
@@ -103,8 +105,9 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }\
   .gnxw-panel.gnxw-open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }\
   .gnxw-head { background: linear-gradient(135deg,#0E1A2E,#070E1B); padding: 16px 18px; display: flex; align-items: center; gap: 12px; color: #F0E8D8; }\
-  .gnxw-av { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg,#C4A96A,#E2CE9A); flex: 0 0 auto;\
+  .gnxw-av { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg,#C4A96A,#E2CE9A); flex: 0 0 auto; overflow: hidden;\
     display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; font-style: italic; font-weight: 600; font-size: 21px; color: #070E1B; }\
+  .gnxw-av img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }\
   .gnxw-id { flex: 1; min-width: 0; }\
   .gnxw-name { font-family: Georgia, "Times New Roman", serif; font-size: 17px; }\
   .gnxw-role { font-size: 11px; letter-spacing: .04em; color: rgba(240,232,216,0.66); margin-top: 1px; }\
@@ -139,10 +142,10 @@
   wrap.innerHTML =
     '<style>' + CSS + '</style>' +
     '<button class="gnxw-fab" id="gnxwFab" aria-label="Chat with Gonxhe">' +
-      '<span class="gnxw-mono">G</span><span class="gnxw-ping"></span></button>' +
+      '<img class="gnxw-fab-img" src="' + AVATAR + '" alt="Gonxhe" /><span class="gnxw-ping"></span></button>' +
     '<section class="gnxw-panel" id="gnxwPanel" role="dialog" aria-label="Gonxhe concierge chat">' +
       '<div class="gnxw-head">' +
-        '<div class="gnxw-av">G</div>' +
+        '<div class="gnxw-av"><img src="' + AVATAR + '" alt="Gonxhe" /></div>' +
         '<div class="gnxw-id"><div class="gnxw-name">Gonxhe</div>' +
           '<div class="gnxw-role"><span class="gnxw-dot"></span>Concierge · Flower Hotels &amp; Resorts</div></div>' +
         '<button class="gnxw-x" id="gnxwClose" aria-label="Close chat">&times;</button>' +
