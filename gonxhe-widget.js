@@ -70,7 +70,7 @@
   // [label](url) → gold CTA button; bare URL → plain link; \n → <br>.
   function fmt(text) {
     var linked = esc(text).replace(
-      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[A-Za-z0-9\-._~:\/?#@!$&*+=%]+)/g,
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[A-Za-z0-9\-._~:\/?#@!$&*+=%;]+)/g,
       function (m, label, md, bare) {
         return label
           ? '<a class="gnxw-cta" href="' + md + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'

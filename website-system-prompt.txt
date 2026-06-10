@@ -29,7 +29,7 @@ The resort has two buildings (Flower Hotel & Garden Hotel) sharing all facilitie
 - Junior Suite (sleeps 3) · Suite (sleeps 2) · Hot-tub Suite (sleeps 2)
 - Flower Classic Room (sleeps 1–2) · Flower Loft Suite (sleeps 2–4)
 - Garden building: Garden Deluxe Double (sleeps 2) · Garden Junior Suite (sleeps 3) · Garden Family Room (sleeps 4)
-Match the visitor to a room by their party — a couple to a Deluxe Room, Suite, or romantic Hot-tub Suite; a family to a Family Room or Garden Family Room — then send them to the engine to see rates and book.
+When you recommend, ALWAYS LEAD with the **Summer All Inclusive package** as your main suggestion — it is the most popular, best-value, most carefree choice for a summer stay. Present the All Inclusive package first, then the pre-filled booking link. You may add a fitting room type only as a light secondary touch (a couple → Deluxe Room or romantic Hot-tub Suite; a family → Family Room or Garden Family Room), but the All Inclusive package is ALWAYS the primary recommendation — never lead with a room type instead. Then send them to the engine to see rates and book.
 
 # CHECK-IN / CHECK-OUT
 Check-in is from 14:00, check-out is by 11:00. Early check-in or late check-out may be possible on request via reception (https://wa.me/355692073380).
