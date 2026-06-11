@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gonxhe · Dashboards</title>
+<style>
+  :root { --navy:#0E1A2E; --navy2:#142540; --gold:#C4A96A; --gold2:#E2CE9A; --dim:#9C8550; --text:#E8D9B5; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; min-height:100vh; background:var(--navy); color:var(--text);
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 18px;
+  }
+  .hub-head { text-align:center; margin-bottom:40px; }
+  .hub-logo {
+    width:112px; height:112px; margin:0 auto 22px; border-radius:50%; background:#FBF8F2;
+    border:1px solid rgba(196,169,106,0.5); display:flex; align-items:center; justify-content:center;
+    box-shadow:0 10px 34px rgba(0,0,0,0.4);
+  }
+  .hub-logo img { width:80px; height:80px; object-fit:contain; display:block; }
+  .hub-title { font-family:Georgia,"Times New Roman",serif; font-style:italic; font-size:34px; color:var(--gold); letter-spacing:1px; }
+  .hub-sub { font-size:12px; letter-spacing:3px; text-transform:uppercase; color:var(--dim); margin-top:8px; }
+  .hub-grid { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; width:100%; max-width:760px; }
+  .hub-card {
+    flex:1 1 320px; max-width:360px; background:var(--navy2); border:1px solid rgba(196,169,106,0.28);
+    border-radius:18px; padding:38px 28px; text-decoration:none; color:var(--text); text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    transition:transform .18s, border-color .18s, box-shadow .18s;
+  }
+  .hub-card:hover { transform:translateY(-4px); border-color:var(--gold); box-shadow:0 18px 50px rgba(7,14,27,0.5); }
+  .hub-ic {
+    width:96px; height:96px; border-radius:50%; background:rgba(196,169,106,0.10);
+    border:1px solid rgba(196,169,106,0.4); display:flex; align-items:center; justify-content:center; margin-bottom:6px;
+  }
+  .hub-ic svg { width:48px; height:48px; stroke:var(--gold); fill:none; stroke-width:1.6; }
+  .hub-name { font-family:Georgia,serif; font-size:22px; color:var(--gold2); }
+  .hub-desc { font-size:13px; color:var(--dim); line-height:1.5; }
+  .hub-go { margin-top:8px; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:var(--gold); }
+  .hub-foot { margin-top:40px; font-size:11px; color:var(--dim); text-align:center; }
+</style>
+</head>
+<body>
+  <div class="hub-head">
+    <div class="hub-logo"><img src="/flower-logo.png" alt="Flower Hotels &amp; Resorts" /></div>
+    <div class="hub-title">Gonxhe</div>
+    <div class="hub-sub">Flower Hotels &amp; Resorts · Dashboards</div>
+  </div>
+
+  <div class="hub-grid">
+    <a class="hub-card" href="/dashboard/hotel">
+      <div class="hub-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/><path d="M3 21h18"/><circle cx="12" cy="9.5" r="1.2"/></svg>
+      </div>
+      <div class="hub-name">Gonxhe Hotel Concierge</div>
+      <div class="hub-desc">Guest database</div>
+      <div class="hub-go">Open →</div>
+    </a>
+
+    <a class="hub-card" href="/dashboard/website">
+      <div class="hub-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3Z"/></svg>
+      </div>
+      <div class="hub-name">Gonxhe Website</div>
+      <div class="hub-desc">Visitors &amp; leads</div>
+      <div class="hub-go">Open →</div>
+    </a>
+  </div>
+
+  <div class="hub-foot">Gonxhe Hotel Intelligence</div>
+</body>
+</html>

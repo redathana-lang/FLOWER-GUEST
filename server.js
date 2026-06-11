@@ -1747,12 +1747,16 @@ app.get('/index.html', noCache, (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Hub: /dashboard shows the two-icon chooser; each dashboard lives under it.
+// Old URLs (/dashboard.html, /website-dashboard.html) keep working.
 app.get('/dashboard', noCache, (_req, res) => {
+  res.sendFile(path.join(__dirname, 'dashboard-hub.html'));
+});
+app.get(['/dashboard/hotel', '/dashboard.html'], noCache, (_req, res) => {
   res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
-
-app.get('/dashboard.html', noCache, (_req, res) => {
-  res.sendFile(path.join(__dirname, 'dashboard.html'));
+app.get(['/dashboard/website', '/website-dashboard.html'], noCache, (_req, res) => {
+  res.sendFile(path.join(__dirname, 'website-dashboard.html'));
 });
 
 app.use(express.static(__dirname, {
