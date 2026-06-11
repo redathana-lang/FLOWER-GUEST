@@ -1,10 +1,10 @@
 /* Gonxhe PWA service worker — makes the dashboards installable & app-like.
    Network-first so dashboards always show live data when online; falls back
    to cache offline. API/auth requests are never cached. */
-const CACHE = 'gonxhe-v1';
+const CACHE = 'gonxhe-v2';
 const SHELL = [
   '/dashboard', '/dashboard/hotel', '/dashboard/website',
-  '/manifest.json', '/flower-logo.png', '/gonxhe-avatar.jpg',
+  '/manifest.json', '/flower-logo.png',
   '/icon-180.png', '/icon-192.png', '/icon-512.png',
 ];
 
