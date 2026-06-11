@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Gonxhe — Flower Hotels &amp; Resorts</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0E1A2E" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Gonxhe" />
+<link rel="apple-touch-icon" href="/icon-180.png" />
+<link rel="icon" type="image/png" href="/icon-192.png" />
 <style>
   :root { --navy:#0E1A2E; --navy2:#142540; --gold:#C4A96A; --gold2:#E2CE9A; --dim:#9C8550; --text:#E8D9B5; }
   * { box-sizing: border-box; }
@@ -75,5 +82,12 @@
   </div>
 
   <div class="hub-foot">Gonxhe Hotel Intelligence</div>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>
