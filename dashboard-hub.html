@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Gonxhe · Dashboards</title>
+<title>Gonxhe — Flower Hotels &amp; Resorts</title>
 <style>
   :root { --navy:#0E1A2E; --navy2:#142540; --gold:#C4A96A; --gold2:#E2CE9A; --dim:#9C8550; --text:#E8D9B5; }
   * { box-sizing: border-box; }
@@ -13,12 +13,18 @@
     display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 18px;
   }
   .hub-head { text-align:center; margin-bottom:40px; }
+  .hub-marks { display:flex; gap:20px; align-items:center; justify-content:center; margin-bottom:22px; }
   .hub-logo {
-    width:112px; height:112px; margin:0 auto 22px; border-radius:50%; background:#FBF8F2;
+    width:104px; height:104px; border-radius:50%; background:#FBF8F2;
     border:1px solid rgba(196,169,106,0.5); display:flex; align-items:center; justify-content:center;
-    box-shadow:0 10px 34px rgba(0,0,0,0.4);
+    box-shadow:0 10px 34px rgba(0,0,0,0.4); flex:0 0 auto;
   }
-  .hub-logo img { width:80px; height:80px; object-fit:contain; display:block; }
+  .hub-logo img { width:74px; height:74px; object-fit:contain; display:block; }
+  .hub-gonxhe {
+    width:104px; height:104px; border-radius:50%; overflow:hidden; flex:0 0 auto;
+    border:2px solid var(--gold); box-shadow:0 10px 34px rgba(0,0,0,0.4);
+  }
+  .hub-gonxhe img { width:100%; height:100%; object-fit:cover; display:block; }
   .hub-title { font-family:Georgia,"Times New Roman",serif; font-style:italic; font-size:34px; color:var(--gold); letter-spacing:1px; }
   .hub-sub { font-size:12px; letter-spacing:3px; text-transform:uppercase; color:var(--dim); margin-top:8px; }
   .hub-grid { display:flex; gap:24px; flex-wrap:wrap; justify-content:center; width:100%; max-width:760px; }
@@ -42,9 +48,12 @@
 </head>
 <body>
   <div class="hub-head">
-    <div class="hub-logo"><img src="/flower-logo.png" alt="Flower Hotels &amp; Resorts" /></div>
+    <div class="hub-marks">
+      <div class="hub-logo"><img src="/flower-logo.png" alt="Flower Hotels &amp; Resorts" /></div>
+      <div class="hub-gonxhe"><img src="/gonxhe-avatar.jpg" alt="Gonxhe" /></div>
+    </div>
     <div class="hub-title">Gonxhe</div>
-    <div class="hub-sub">Flower Hotels &amp; Resorts · Dashboards</div>
+    <div class="hub-sub">for Flower Hotels &amp; Resorts</div>
   </div>
 
   <div class="hub-grid">
@@ -53,7 +62,7 @@
         <svg viewBox="0 0 24 24"><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/><path d="M3 21h18"/><circle cx="12" cy="9.5" r="1.2"/></svg>
       </div>
       <div class="hub-name">Gonxhe Hotel Concierge</div>
-      <div class="hub-desc">Guest database</div>
+      <div class="hub-desc">Guest relations</div>
       <div class="hub-go">Open →</div>
     </a>
 
