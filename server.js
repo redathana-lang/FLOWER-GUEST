@@ -118,6 +118,32 @@ function countryFromReq(req) {
   } catch (_) { return ''; }
 }
 
+// ─── Bot / crawler filtering ───────────────────────────────────────────────
+// Visitor & view counts should approximate Google Analytics, which excludes
+// bots. We drop any request whose User-Agent looks like a known crawler, link
+// unfurler, uptime monitor, headless browser, or HTTP library — and any request
+// with no User-Agent at all (real browsers always send one). Applied at the
+// tracking ingestion points so web-visitors.json / web-daily.json stay clean.
+const BOT_UA_RE = new RegExp([
+  'bot', 'crawl', 'spider', 'slurp', 'mediapartners', 'adsbot', 'bingpreview',
+  'facebookexternalhit', 'facebot', 'whatsapp', 'telegram', 'discord', 'slack',
+  'twitter', 'linkedin', 'embedly', 'pinterest', 'redditbot', 'applebot',
+  'petalbot', 'yandex', 'baidu', 'sogou', 'exabot', 'duckduck', 'semrush',
+  'ahrefs', 'mj12', 'dotbot', 'dataforseo', 'seznam', 'bytespider', 'gptbot',
+  'claudebot', 'ccbot', 'amazonbot', 'headless', 'phantom', 'puppeteer',
+  'playwright', 'selenium', 'python-requests', 'python-urllib', 'aiohttp',
+  'okhttp', 'go-http-client', 'libwww', 'wget', 'curl', 'httpclient', 'axios',
+  'node-fetch', 'lighthouse', 'pagespeed', 'gtmetrix', 'pingdom', 'uptimerobot',
+  'statuscake', 'monitis', 'newrelic', 'site24x7', 'prerender', 'archive.org',
+  'ia_archiver', 'feedfetcher', 'apache-httpclient', 'java/', 'scrapy',
+].join('|'), 'i');
+
+function isBotRequest(req) {
+  const ua = String((req.headers && req.headers['user-agent']) || '');
+  if (!ua.trim()) return true;        // no UA → not a real browser
+  return BOT_UA_RE.test(ua);
+}
+
 // One JSON map keyed by sessionId. We store only the resolved country, never
 // the raw IP, plus the funnel flags the dashboard reports on.
 const WEB_VISITORS_FILE = 'web-visitors.json';
@@ -444,7 +470,7 @@ app.post('/api/conversation', (req, res) => {
   writeJSON('conversations.json', all);
   // Make sure a website visitor record exists (with resolved country) even if
   // the widget's "opened" ping was missed.
-  if (isWebsite) {
+  if (isWebsite && !isBotRequest(req)) {
     try { upsertWebVisitor(sessionId, { funnel: { opened: true } }, req); }
     catch (e) { console.error('web visitor (conversation) update failed', e); }
   }
@@ -460,6 +486,8 @@ app.post('/api/web/visit', (req, res) => {
   if (!sessionId || !event) {
     return res.status(400).json({ error: 'sessionId and event required' });
   }
+  // Don't record bots/crawlers — keeps counts comparable to Google Analytics.
+  if (isBotRequest(req)) return res.json({ ok: true, skipped: 'bot' });
   const country = countryFromReq(req);
 
   // 'duration' is a measured chunk of real active time (ms) — it feeds the
@@ -759,7 +787,7 @@ app.post('/api/gonxhe', async (req, res) => {
     // Website funnel: count the exchange and flag when a booking-engine link was
     // offered, so the Website dashboard shows engagement without the widget
     // reporting every turn separately.
-    if (isWebsite && sessionId) {
+    if (isWebsite && sessionId && !isBotRequest(req)) {
       try {
         const showsBooking = /cloudbeds\.com/i.test(finalText);
         upsertWebVisitor(sessionId, {
