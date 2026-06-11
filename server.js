@@ -157,6 +157,23 @@ function upsertWebVisitor(sessionId, patch, req) {
   return next;
 }
 
+// Per-day tally of website-Gonxhe activity, keyed by date (Europe/Tirane).
+// This is what the daily report uses so each day's message count is EXACT for
+// that 24h window — the per-visitor `messages` counter above is lifetime
+// cumulative and would over-count returning sessions. `msgs` counts Gonxhe
+// replies (one per visitor turn); `sessions` dedups distinct chatters per day.
+const WEB_MSG_BY_DAY_FILE = 'web-messages-by-day.json';
+function recordWebMessage(sessionId) {
+  const day = tzDateString(new Date().toISOString()); // function declaration → hoisted
+  const data = readJSON(WEB_MSG_BY_DAY_FILE, {});
+  if (!data[day]) data[day] = { msgs: 0, sessions: {} };
+  data[day].msgs += 1;
+  if (sessionId) data[day].sessions[sessionId] = (data[day].sessions[sessionId] || 0) + 1;
+  const days = Object.keys(data).sort();
+  while (days.length > 365) delete data[days.shift()]; // keep ~1 year
+  writeJSON(WEB_MSG_BY_DAY_FILE, data);
+}
+
 // ─── Middleware ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
 
@@ -666,6 +683,7 @@ app.post('/api/gonxhe', async (req, res) => {
           incMessages: true,
           funnel: { messaged: true, ...(showsBooking ? { bookingLinkShown: true } : {}) },
         }, req);
+        recordWebMessage(sessionId); // exact per-day tally for the daily report
       } catch (e) { console.error('web visitor update failed', e); }
     }
     res.json({ text: finalText });
@@ -1404,12 +1422,13 @@ function buildDailyReport(dateStr) {
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-  // Messages exchanged with Gonxhe (per-visitor reply counter).
-  let totalMessages = 0, chatters = 0;
-  for (const v of visitors) {
-    const m = v.messages || 0;
-    if (m > 0) { totalMessages += m; chatters++; }
-  }
+  // Messages exchanged with Gonxhe — read the EXACT per-day tally (not the
+  // lifetime per-visitor counter, which would over-count returning sessions).
+  // Counts Gonxhe replies that day; chatters = distinct sessions that messaged.
+  const msgByDay = readJSON(WEB_MSG_BY_DAY_FILE, {});
+  const dayMsg = msgByDay[day] || { msgs: 0, sessions: {} };
+  const totalMessages = dayMsg.msgs || 0;
+  const chatters = Object.keys(dayMsg.sessions || {}).length;
 
   // Most-visited pages (count page-views across today's visitors; drop query).
   const pageCounts = {};
