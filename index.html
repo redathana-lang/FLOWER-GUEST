@@ -1932,26 +1932,44 @@ function init() {
   // Populate country dial codes (default Albania)
   populateCountrySelect();
 
-  // Restore guest data if we have a remembered registration for this room
+  // Restore a remembered registration for this room — but ONLY while the stay
+  // is still current. Once the check-out day has passed we forget it, so the
+  // guest (or a new guest in that room) registers fresh instead of being
+  // recognised by the old room number.
   if (prefillRoom) {
     const saved = localStorage.getItem('fh_guest_' + prefillRoom);
     if (saved) {
       try {
-        guestData = JSON.parse(saved);
-        roomNo = prefillRoom;
-        document.getElementById('navRoom').textContent = 'Room ' + prefillRoom;
-        // Restore country + local number into the split fields
-        if (guestData.country) {
-          const sel = document.getElementById('gCountry');
-          if (sel) sel.value = guestData.country;
+        const parsed = JSON.parse(saved);
+        const todayStr = today.getFullYear() + '-' +
+          String(today.getMonth() + 1).padStart(2, '0') + '-' +
+          String(today.getDate()).padStart(2, '0');
+        const coStr = String(parsed.checkout || '').slice(0, 10);
+        if (coStr && coStr < todayStr) {
+          // Stay ended — clear the remembered registration and start fresh.
+          localStorage.removeItem('fh_guest_' + prefillRoom);
+          if (localStorage.getItem('fh_last_room') === prefillRoom) {
+            localStorage.removeItem('fh_last_room');
+          }
+          guestData = {};
+          if (!urlRoom) document.getElementById('gRoom').value = '';
+        } else {
+          guestData = parsed;
+          roomNo = prefillRoom;
+          document.getElementById('navRoom').textContent = 'Room ' + prefillRoom;
+          // Restore country + local number into the split fields
+          if (guestData.country) {
+            const sel = document.getElementById('gCountry');
+            if (sel) sel.value = guestData.country;
+          }
+          if (guestData.phone) {
+            const dial = guestData.dialCode || '';
+            const local = guestData.phone.replace(dial, '').replace(/[^0-9]/g, '');
+            const nf = document.getElementById('gPhoneNumber');
+            if (nf) nf.value = local;
+          }
+          showGuestSuccess(true);
         }
-        if (guestData.phone) {
-          const dial = guestData.dialCode || '';
-          const local = guestData.phone.replace(dial, '').replace(/[^0-9]/g, '');
-          const nf = document.getElementById('gPhoneNumber');
-          if (nf) nf.value = local;
-        }
-        showGuestSuccess(true);
       } catch (e) { console.warn('Bad guest cache'); }
     }
   }
