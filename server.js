@@ -685,6 +685,28 @@ function runCaptureLead(sessionId, input, req) {
   return { ok: true, saved: { name, email, phone } };
 }
 
+// Safety net against a known LLM failure mode: occasionally a model echoes the
+// same answer twice (guests reported this on "what's on tonight"). Collapse a
+// duplicated reply so it's never shown twice. Conservative: only removes a
+// whole-message exact double, or a substantial paragraph (≥40 chars) that
+// exactly repeats an earlier one — clean replies pass through unchanged.
+function dedupeReply(text) {
+  const s = String(text || '');
+  const norm = x => x.replace(/\s+/g, ' ').trim().toLowerCase();
+  const t = s.trim();
+  const half = Math.floor(t.length / 2);
+  const a = t.slice(0, half).trim(), b = t.slice(half).trim();
+  if (a.length >= 80 && norm(a) === norm(b)) return a;
+  const seen = new Set(), out = [];
+  for (const para of s.split(/\n{2,}/)) {
+    const key = norm(para);
+    if (key.length >= 40 && seen.has(key)) continue;
+    if (key.length >= 40) seen.add(key);
+    out.push(para);
+  }
+  return out.join('\n\n');
+}
+
 // ─── GONXHE PROXY ────────────────────────────────────────────────────────
 app.post('/api/gonxhe', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -784,6 +806,7 @@ app.post('/api/gonxhe', async (req, res) => {
     if (!finalText) {
       finalText = 'Please contact our reception on WhatsApp: https://wa.me/' + RECEPTION_WA;
     }
+    finalText = dedupeReply(finalText); // never show the same answer twice
     // Website funnel: count the exchange and flag when a booking-engine link was
     // offered, so the Website dashboard shows engagement without the widget
     // reporting every turn separately.
