@@ -1531,11 +1531,14 @@ function getReportTransporter() {
   return { transporter: nodemailer.createTransport({ service: 'gmail', auth: { user, pass } }), user };
 }
 
-async function sendDailyReport(report) {
+async function sendDailyReport(report, toOverride) {
   const built = getReportTransporter();
   if (!built) throw new Error('REPORT_SMTP_USER/REPORT_SMTP_PASS (or SMTP_USER/SMTP_PASS) not configured');
-  const to = (process.env.REPORT_TO || REPORT_DEFAULT_TO)
-    .split(',').map(s => s.trim()).filter(Boolean);
+  // toOverride (string "a@x, b@y" or array) lets a manual test target a single
+  // address; otherwise fall back to REPORT_TO / the four default recipients.
+  const rawTo = Array.isArray(toOverride) ? toOverride.join(',')
+    : (typeof toOverride === 'string' && toOverride.trim() ? toOverride : (process.env.REPORT_TO || REPORT_DEFAULT_TO));
+  const to = String(rawTo).split(',').map(s => s.trim()).filter(Boolean);
   await built.transporter.sendMail({
     from: `"Flower Hotels & Resorts — Gonxhe" <${built.user}>`,
     to,
@@ -1584,7 +1587,8 @@ app.post('/api/daily-report/run', requireDashboardAuth, async (req, res) => {
   try {
     const day = (req.body && req.body.day) ? String(req.body.day) : tzDateString(new Date().toISOString());
     const report = buildDailyReport(day);
-    const info = await sendDailyReport(report);
+    const toOverride = (req.body && req.body.to) ? req.body.to : undefined;
+    const info = await sendDailyReport(report, toOverride);
     res.json({ ok: true, day, sentTo: info.to, from: info.from, report });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
