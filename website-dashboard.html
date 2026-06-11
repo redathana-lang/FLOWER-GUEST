@@ -421,12 +421,18 @@ function fmt(ts) {
   const d = new Date(ts);
   return d.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
-function stageOf(f) {
-  f = f || {};
+// Takes the whole visitor so a real conversation is detected from the
+// transcript / message count too — not only the funnel flag (which can be
+// missed if a ping was lost). Anyone who actually exchanged messages with
+// Gonxhe shows as "Conversation", never just "Visited".
+function stageOf(v) {
+  v = v || {};
+  const f = v.funnel || {};
+  const hadConversation = f.messaged || (v.messages || 0) > 0 || (v.transcript || []).length > 0;
   if (f.leadCaptured)       return { cls: 'lead',    label: 'Lead captured' };
   if (f.bookingLinkClicked) return { cls: 'pending', label: 'Booking · pending' };
   if (f.bookingLinkShown)   return { cls: 'shown',   label: 'Got booking link' };
-  if (f.messaged)           return { cls: 'engaged', label: 'Engaged' };
+  if (hadConversation)      return { cls: 'engaged', label: 'Conversation' };
   if (f.opened)             return { cls: 'opened',  label: 'Opened chat' };
   return { cls: 'landed', label: 'Visited' };
 }
@@ -492,7 +498,7 @@ function render() {
   const cards = [
     { k: 'Visitors', v: f.visitors || 0, cls: 'gold', note: 'landed on the site' },
     { k: 'Opened chat', v: f.opened || 0, note: 'engaged the bubble' },
-    { k: 'Engaged', v: f.messaged || 0, note: 'sent a message' },
+    { k: 'Conversation', v: f.messaged || 0, note: 'messaged Gonxhe' },
     { k: 'Got booking link', v: f.bookingLinkShown || 0, note: 'Gonxhe offered it' },
     { k: 'Clicked to book', v: f.bookingLinkClicked || 0, cls: 'green', note: 'opened the engine (pending)' },
     { k: 'WhatsApp clicks', v: f.whatsappClicked || 0, note: 'reception handoff' },
@@ -517,7 +523,7 @@ function render() {
   document.getElementById('visitorCount').textContent =
     '· ' + (shown.length < vs.length ? `${shown.length} of ${vs.length}` : vs.length);
   let html = shown.map(v => {
-    const st = stageOf(v.funnel);
+    const st = stageOf(v);
     const name = v.name ? `<span class="who-name">${esc(v.name)}</span>` : '<span class="muted">Anonymous</span>';
     const mail = v.email ? `<div class="who-mail">${esc(v.email)}</div>` : (v.phone ? `<div class="who-mail">${esc(v.phone)}</div>` : '');
     return `<tr onclick="openDrawer('${v.sessionId}')">
@@ -543,7 +549,7 @@ function render() {
 function openDrawer(sessionId) {
   const v = (DATA.visitors || []).find(x => x.sessionId === sessionId);
   if (!v) return;
-  const st = stageOf(v.funnel);
+  const st = stageOf(v);
   document.getElementById('drawerTitle').innerHTML = `${flagEmoji(v.country)} ${esc(v.name || 'Anonymous visitor')}`;
   const bits = [st.label];
   if (v.email) bits.push(esc(v.email));
