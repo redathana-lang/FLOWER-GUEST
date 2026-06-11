@@ -389,4 +389,37 @@
   // Track every visitor who loads the page — even if they never open the chat —
   // along with which page they're on and where they came from.
   logVisit('landed', { page: location.pathname + location.search, ref: document.referrer || '' });
+
+  // ── Real time-on-site measurement ──────────────────────────────────────
+  // Measure ACTIVE time on the page (paused while the tab is hidden) and report
+  // it to the server in deltas, so the daily report's "average time on site" is
+  // a true measurement — not lastSeen−firstSeen (which spans days). Deltas are
+  // sent on a heartbeat and flushed on tab-hide / page-unload via sendBeacon.
+  var activeMs = 0, sentMs = 0, segStart = Date.now();
+  var visible = (document.visibilityState !== 'hidden');
+  function activeNow() { return activeMs + (visible ? (Date.now() - segStart) : 0); }
+  function flushDuration(useBeacon) {
+    var total = activeNow();
+    var delta = Math.round(total - sentMs);
+    if (delta < 1000) return;            // ignore sub-second noise
+    sentMs = total;
+    var body = { sessionId: SID, event: 'duration', ms: delta };
+    try {
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(API_BASE + '/api/web/visit',
+          new Blob([JSON.stringify(body)], { type: 'application/json' }));
+      } else { post('/api/web/visit', body); }
+    } catch (e) { post('/api/web/visit', body); }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      if (visible) { activeMs += Date.now() - segStart; visible = false; }
+      flushDuration(true);
+    } else if (!visible) { segStart = Date.now(); visible = true; }
+  });
+  window.addEventListener('pagehide', function () {
+    if (visible) { activeMs += Date.now() - segStart; visible = false; }
+    flushDuration(true);
+  });
+  setInterval(function () { if (visible) flushDuration(false); }, 20000); // heartbeat backup
 })();

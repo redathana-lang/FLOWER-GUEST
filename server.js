@@ -157,21 +157,87 @@ function upsertWebVisitor(sessionId, patch, req) {
   return next;
 }
 
-// Per-day tally of website-Gonxhe activity, keyed by date (Europe/Tirane).
-// This is what the daily report uses so each day's message count is EXACT for
-// that 24h window — the per-visitor `messages` counter above is lifetime
-// cumulative and would over-count returning sessions. `msgs` counts Gonxhe
-// replies (one per visitor turn); `sessions` dedups distinct chatters per day.
-const WEB_MSG_BY_DAY_FILE = 'web-messages-by-day.json';
-function recordWebMessage(sessionId) {
-  const day = tzDateString(new Date().toISOString()); // function declaration → hoisted
-  const data = readJSON(WEB_MSG_BY_DAY_FILE, {});
-  if (!data[day]) data[day] = { msgs: 0, sessions: {} };
-  data[day].msgs += 1;
-  if (sessionId) data[day].sessions[sessionId] = (data[day].sessions[sessionId] || 0) + 1;
+// ── Per-day website analytics (the EXACT source for the daily report) ──────
+// The per-visitor `web-visitors.json` snapshot above is cumulative for the
+// lifetime of a (localStorage-persisted) sessionId, so it spans many days and
+// CANNOT yield an accurate single-day figure. Instead we keep a per-day log,
+// keyed by date in REPORT_TZ, that records — for that calendar day only —
+// each session's resolved country, page-views, real on-site duration, and
+// Gonxhe messages, plus a per-page view tally. Everything in the report is
+// derived from this, so each day's numbers are exact for that 24h window.
+//   web-daily.json = { "YYYY-MM-DD": { sessions: { sid: {c,v,d,m} }, pages: { path: n } } }
+//     c = ISO country, v = page-views, d = active ms on site, m = Gonxhe messages
+const WEB_DAILY_FILE = 'web-daily.json';
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function emptyDay() { return { sessions: {}, pages: {} }; }
+
+function withWebDaily(mutator) {
+  const data = readJSON(WEB_DAILY_FILE, {});
+  mutator(data);
   const days = Object.keys(data).sort();
-  while (days.length > 365) delete data[days.shift()]; // keep ~1 year
-  writeJSON(WEB_MSG_BY_DAY_FILE, data);
+  while (days.length > 400) delete data[days.shift()]; // keep ~13 months
+  writeJSON(WEB_DAILY_FILE, data);
+}
+
+// Get (creating if needed) a session bucket for `day`. tzDateString is a
+// hoisted function declaration, so it's safe to call here.
+function daySession(data, day, sid) {
+  if (!data[day]) data[day] = emptyDay();
+  if (!data[day].sessions[sid]) data[day].sessions[sid] = { c: '', v: 0, d: 0, m: 0 };
+  return data[day];
+}
+
+// A page load: +1 view for the session and the page, set country once.
+function recordWebView(sessionId, page, country) {
+  if (!sessionId) return;
+  const day = tzDateString(new Date().toISOString());
+  withWebDaily(data => {
+    const d = daySession(data, day, sessionId);
+    d.sessions[sessionId].v += 1;
+    if (country && !d.sessions[sessionId].c) d.sessions[sessionId].c = country;
+    if (page) {
+      const key = (String(page).split('?')[0] || '/') || '/';
+      d.pages[key] = (d.pages[key] || 0) + 1;
+    }
+  });
+}
+
+// Ensure a session exists for the day (and capture country) without a view —
+// used for non-'landed' funnel pings.
+function touchWebSession(sessionId, country) {
+  if (!sessionId) return;
+  const day = tzDateString(new Date().toISOString());
+  withWebDaily(data => {
+    const d = daySession(data, day, sessionId);
+    if (country && !d.sessions[sessionId].c) d.sessions[sessionId].c = country;
+  });
+}
+
+// A measured chunk of real, active on-site time (ms). Deltas are summed, so
+// multiple beacons never double-count; a per-delta clamp guards against clock
+// jumps / a tab left in the background.
+function recordWebDuration(sessionId, ms, country) {
+  if (!sessionId) return;
+  const add = Math.max(0, Math.min(Number(ms) || 0, 30 * 60 * 1000)); // ≤30 min per chunk
+  if (!add) return;
+  const day = tzDateString(new Date().toISOString());
+  withWebDaily(data => {
+    const d = daySession(data, day, sessionId);
+    d.sessions[sessionId].d += add;
+    if (country && !d.sessions[sessionId].c) d.sessions[sessionId].c = country;
+  });
+}
+
+// One Gonxhe reply (a message exchange) for this session, today.
+function recordWebMessage(sessionId, country) {
+  if (!sessionId) return;
+  const day = tzDateString(new Date().toISOString());
+  withWebDaily(data => {
+    const d = daySession(data, day, sessionId);
+    d.sessions[sessionId].m += 1;
+    if (country && !d.sessions[sessionId].c) d.sessions[sessionId].c = country;
+  });
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────
@@ -394,6 +460,15 @@ app.post('/api/web/visit', (req, res) => {
   if (!sessionId || !event) {
     return res.status(400).json({ error: 'sessionId and event required' });
   }
+  const country = countryFromReq(req);
+
+  // 'duration' is a measured chunk of real active time (ms) — it feeds the
+  // accurate per-day on-site metric and is NOT a funnel step.
+  if (event === 'duration') {
+    recordWebDuration(sessionId, (req.body && req.body.ms), country);
+    return res.json({ ok: true });
+  }
+
   const EVENT_TO_FLAG = {
     landed: 'landed',
     opened: 'opened',
@@ -407,6 +482,14 @@ app.post('/api/web/visit', (req, res) => {
   if (page) patch.__page = String(page).slice(0, 200);
   if (ref) patch.__ref = String(ref).slice(0, 300);
   upsertWebVisitor(sessionId, patch, req);
+
+  // Per-day accurate log: a 'landed' is a page view; other pings just ensure
+  // the session (and its country) is counted for the day.
+  if (event === 'landed') {
+    recordWebView(sessionId, page ? String(page).slice(0, 200) : '', country);
+  } else {
+    touchWebSession(sessionId, country);
+  }
   res.json({ ok: true });
 });
 
@@ -683,7 +766,7 @@ app.post('/api/gonxhe', async (req, res) => {
           incMessages: true,
           funnel: { messaged: true, ...(showsBooking ? { bookingLinkShown: true } : {}) },
         }, req);
-        recordWebMessage(sessionId); // exact per-day tally for the daily report
+        recordWebMessage(sessionId, countryFromReq(req)); // exact per-day tally for the daily report
       } catch (e) { console.error('web visitor update failed', e); }
     }
     res.json({ text: finalText });
@@ -1337,8 +1420,9 @@ app.post('/unsubscribe', express.urlencoded({ extended: false }), (req, res) => 
 //   • visitors, broken down by nationality
 //   • messages exchanged with Gonxhe
 //   • most-visited page(s)
-//   • average time visitors spent on the site
-// Data source is web-visitors.json (the same store the Website dashboard reads).
+//   • average real (measured) time visitors spent on the site
+// Data source is web-daily.json — a per-day, timestamp-scoped log (NOT the
+// cumulative web-visitors.json), so every figure is exact for that 24h window.
 // The email is sent FROM flowreport26@gmail.com (the reports mailbox) — set
 // REPORT_SMTP_USER / REPORT_SMTP_PASS (a Gmail App Password) on Render.
 
@@ -1399,19 +1483,21 @@ function fmtDuration(ms) {
 }
 
 // Build the report object for a given YYYY-MM-DD (defaults to today, Tirane).
+// EVERY figure comes from the per-day log (web-daily.json), scoped strictly to
+// that calendar day — no cumulative/cross-day values, no estimation.
 function buildDailyReport(dateStr) {
   const day = dateStr || tzDateString(new Date().toISOString());
-  const visitorsMap = readJSON(WEB_VISITORS_FILE, {});
-  // A visitor "belongs" to a day if their most recent activity fell on it.
-  const visitors = Object.values(visitorsMap).filter(v => {
-    const seen = v.lastSeen || v.firstSeen;
-    return seen && tzDateString(seen) === day;
-  });
+  const daily = readJSON(WEB_DAILY_FILE, {});
+  const dd = daily[day] || emptyDay();
+  const sessions = Object.values(dd.sessions || {});
+
+  // Visitors = distinct sessions active that day.
+  const totalVisitors = sessions.length;
 
   // Nationality breakdown (ISO alpha-2 → full name; blank → Unknown).
   const byCountry = {};
-  for (const v of visitors) {
-    const code = (v.country || '').toUpperCase() || 'XX';
+  for (const s of sessions) {
+    const code = (s.c || '').toUpperCase() || 'XX';
     byCountry[code] = (byCountry[code] || 0) + 1;
   }
   const nationalities = Object.entries(byCountry)
@@ -1422,47 +1508,37 @@ function buildDailyReport(dateStr) {
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-  // Messages exchanged with Gonxhe — read the EXACT per-day tally (not the
-  // lifetime per-visitor counter, which would over-count returning sessions).
-  // Counts Gonxhe replies that day; chatters = distinct sessions that messaged.
-  const msgByDay = readJSON(WEB_MSG_BY_DAY_FILE, {});
-  const dayMsg = msgByDay[day] || { msgs: 0, sessions: {} };
-  const totalMessages = dayMsg.msgs || 0;
-  const chatters = Object.keys(dayMsg.sessions || {}).length;
-
-  // Most-visited pages (count page-views across today's visitors; drop query).
-  const pageCounts = {};
-  for (const v of visitors) {
-    for (const p of (v.pages || [])) {
-      const key = (String(p).split('?')[0] || '/') || '/';
-      pageCounts[key] = (pageCounts[key] || 0) + 1;
-    }
+  // Messages exchanged with Gonxhe that day; chatters = sessions that messaged.
+  let totalMessages = 0, chatters = 0;
+  for (const s of sessions) {
+    if (s.m > 0) { totalMessages += s.m; chatters++; }
   }
-  const topPages = Object.entries(pageCounts)
+
+  // Most-visited pages — exact per-day view counts.
+  const topPages = Object.entries(dd.pages || {})
     .map(([page, count]) => ({ page, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  // Time on site: dwell = lastSeen − firstSeen per visitor, averaged.
-  let dwellSum = 0, dwellCount = 0;
-  for (const v of visitors) {
-    if (v.firstSeen && v.lastSeen) {
-      const ms = new Date(v.lastSeen) - new Date(v.firstSeen);
-      if (ms > 0) { dwellSum += ms; dwellCount++; }
-    }
+  // Time on site = real measured active duration, averaged over the sessions
+  // that produced any (so single-ping bounces with 0 don't drag it down).
+  let durSum = 0, durCount = 0;
+  for (const s of sessions) {
+    if (s.d > 0) { durSum += s.d; durCount++; }
   }
-  const avgDwellMs = dwellCount ? Math.round(dwellSum / dwellCount) : 0;
+  const avgDwellMs = durCount ? Math.round(durSum / durCount) : 0;
 
   return {
     day,
-    totalVisitors: visitors.length,
+    totalVisitors,
     nationalities,
     totalMessages,
     chatters,
     topPage: topPages[0] || null,
     topPages,
     avgDwellMs,
-    totalDwellMs: dwellSum,
+    totalDwellMs: durSum,
+    measuredVisitors: durCount, // how many visitors contributed a time reading
   };
 }
 
