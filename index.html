@@ -2070,6 +2070,42 @@ function showGuestSuccess(returning) {
   const co = guestData.checkout ? new Date(guestData.checkout).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
   document.getElementById('successMeta').textContent =
     roomNo !== '—' ? `Room ${roomNo} · ${ci} → ${co}` : `${ci} → ${co}`;
+  // A warm pop-up for a recognised returning guest — once per browser session
+  // (so refreshing doesn't keep re-showing it).
+  if (returning && !sessionStorage.getItem('fh_welcomed_back')) {
+    sessionStorage.setItem('fh_welcomed_back', '1');
+    showWelcomeBack(guestData.name);
+  }
+}
+
+// Elegant "Welcome back" pop-up for returning guests.
+function showWelcomeBack(name) {
+  if (document.getElementById('fhWelcomeBack')) return;
+  const safeName = String(name || 'guest').replace(/[<>&"']/g, '');
+  const ov = document.createElement('div');
+  ov.id = 'fhWelcomeBack';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(7,14,27,0.62);opacity:0;transition:opacity .28s;font-family:Georgia,"Times New Roman",serif;';
+  ov.innerHTML =
+    '<div class="fhwb-card" style="position:relative;max-width:360px;width:100%;background:#FBF8F2;border:1px solid rgba(196,169,106,0.5);border-radius:20px;padding:34px 28px 30px;text-align:center;box-shadow:0 28px 70px rgba(7,14,27,0.5);transform:translateY(12px);transition:transform .28s;">' +
+      '<button class="fhwb-x" aria-label="Close" style="position:absolute;top:10px;right:14px;background:transparent;border:none;color:#9C8550;font-size:22px;cursor:pointer;line-height:1;">&times;</button>' +
+      '<div style="width:42px;height:2px;background:#C4A96A;border-radius:2px;margin:0 auto 16px;"></div>' +
+      '<div style="font-style:italic;font-size:23px;color:#C4A96A;letter-spacing:.4px;">Welcome back,</div>' +
+      '<div style="font-size:22px;color:#0E1A2E;margin-top:2px;font-weight:bold;">' + safeName + '</div>' +
+      '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#5a5246;line-height:1.6;margin-top:14px;">Nothing makes us happier than a returning guest. It is a true pleasure to host you again at Flower Hotels &amp; Resorts.</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+  const card = ov.querySelector('.fhwb-card');
+  requestAnimationFrame(function () { ov.style.opacity = '1'; if (card) card.style.transform = 'translateY(0)'; });
+  let closed = false;
+  function close() {
+    if (closed) return; closed = true;
+    ov.style.opacity = '0';
+    setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 300);
+  }
+  ov.addEventListener('click', function (e) {
+    if (e.target === ov || (e.target.classList && e.target.classList.contains('fhwb-x'))) close();
+  });
+  setTimeout(close, 6500);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
