@@ -873,7 +873,20 @@ app.get('/api/web-activity', requireDashboardAuth, (_req, res) => {
     if (f.whatsappClicked) funnel.whatsappClicked++;
     if (f.leadCaptured) funnel.leadCaptured++;
   }
-  res.json({ visitors, funnel });
+  // GA-style traffic volume, per day, from the accurate per-day log. The
+  // dashboard sums these over its chosen date range:
+  //   sessions = distinct sessions active that day (a daily "visit")
+  //   views    = total page-views that day
+  // (web-daily.json began on deploy day, so earlier days are absent → 0.)
+  const daily = readJSON(WEB_DAILY_FILE, {});
+  const dailyTotals = {};
+  for (const [day, dd] of Object.entries(daily)) {
+    const sids = Object.keys(dd.sessions || {});
+    let views = 0;
+    for (const sid of sids) views += (dd.sessions[sid].v || 0);
+    dailyTotals[day] = { sessions: sids.length, views };
+  }
+  res.json({ visitors, funnel, dailyTotals });
 });
 
 // ─── WEBSITE VISITOR STATUS (reception pipeline, dashboard-only) ──────────

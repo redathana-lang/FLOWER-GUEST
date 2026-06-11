@@ -230,6 +230,15 @@ tbody tr:last-child td { border-bottom: none; }
   </div>
 
   <div id="view-activity">
+  <div class="vfilter">
+    <span class="vf-label">Filter by date</span>
+    <label>From <input type="date" id="vFrom" onchange="onFilterChange()" /></label>
+    <label>To <input type="date" id="vTo" onchange="onFilterChange()" /></label>
+    <button class="gbtn ghost" onclick="vQuick(0)">Today</button>
+    <button class="gbtn ghost" onclick="vQuick(7)">Last 7 days</button>
+    <button class="gbtn ghost" onclick="vClear()">All</button>
+  </div>
+  <div class="cards" id="gaStats"></div>
   <div class="section-title">The <em>funnel</em></div>
   <div class="cards" id="funnelCards"></div>
 
@@ -245,14 +254,6 @@ tbody tr:last-child td { border-bottom: none; }
   </div>
 
   <div class="section-title" style="margin-top:24px;">Visitors <span class="muted" id="visitorCount"></span></div>
-  <div class="vfilter">
-    <span class="vf-label">Filter by date</span>
-    <label>From <input type="date" id="vFrom" onchange="onFilterChange()" /></label>
-    <label>To <input type="date" id="vTo" onchange="onFilterChange()" /></label>
-    <button class="gbtn ghost" onclick="vQuick(0)">Today</button>
-    <button class="gbtn ghost" onclick="vQuick(7)">Last 7 days</button>
-    <button class="gbtn ghost" onclick="vClear()">All</button>
-  </div>
   <div class="panel">
     <div class="tbl-wrap">
       <table>
@@ -380,8 +381,52 @@ function countryName(iso) {
   catch (e) { return iso.toUpperCase(); }
 }
 function hostOf(url) { try { return new URL(url).hostname || url; } catch (e) { return url; } }
-function renderBreakdown() {
-  const vs = DATA.visitors || [];
+// Funnel totals computed client-side over a (date-filtered) visitor list, so
+// the funnel cards honour the same date filter as the table. "Conversation"
+// uses the same robust detection as the stage (flag OR messages OR transcript).
+function computeFunnel(list) {
+  const f = { visitors: list.length, opened: 0, messaged: 0, bookingLinkShown: 0,
+    bookingLinkClicked: 0, whatsappClicked: 0, leadCaptured: 0 };
+  for (const v of list) {
+    const fl = v.funnel || {};
+    if (fl.opened) f.opened++;
+    if (fl.messaged || (v.messages || 0) > 0 || (v.transcript || []).length > 0) f.messaged++;
+    if (fl.bookingLinkShown) f.bookingLinkShown++;
+    if (fl.bookingLinkClicked) f.bookingLinkClicked++;
+    if (fl.whatsappClicked) f.whatsappClicked++;
+    if (fl.leadCaptured) f.leadCaptured++;
+  }
+  return f;
+}
+// GA-style traffic strip: live visitors (last 30 min, always "now") + Sessions
+// and Views for the selected date range (summed from server dailyTotals).
+function renderGaStats() {
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  const live = (DATA.visitors || []).filter(v => v.lastSeen && new Date(v.lastSeen).getTime() >= cutoff);
+  const from = (document.getElementById('vFrom') || {}).value || null;
+  const to = (document.getElementById('vTo') || {}).value || null;
+  let sessions = 0, views = 0;
+  for (const [day, t] of Object.entries(DATA.dailyTotals || {})) {
+    if (from && day < from) continue;
+    if (to && day > to) continue;
+    sessions += t.sessions || 0;
+    views += t.views || 0;
+  }
+  const byC = {};
+  live.forEach(v => { const c = (v.country || '').toUpperCase() || '—'; byC[c] = (byC[c] || 0) + 1; });
+  const topLive = Object.entries(byC).sort((a, b) => b[1] - a[1]).slice(0, 4)
+    .map(([c, n]) => `${flagEmoji(c === '—' ? '' : c)} ${n}`).join('  ');
+  const cards = [
+    { k: '● Live now', v: live.length, cls: 'green', note: live.length ? (topLive + ' · last 30 min') : 'last 30 min' },
+    { k: 'Sessions', v: sessions.toLocaleString(), cls: 'gold', note: 'visits in range' },
+    { k: 'Views', v: views.toLocaleString(), note: 'pages viewed in range' },
+  ];
+  document.getElementById('gaStats').innerHTML = cards.map(c =>
+    `<div class="card ${c.cls || ''}"><div class="k">${c.k}</div><div class="v">${c.v}</div><div class="note">${c.note}</div></div>`
+  ).join('');
+}
+function renderBreakdown(vs) {
+  vs = vs || DATA.visitors || [];
   const counts = {};
   vs.forEach(v => { const c = (v.country || '').toUpperCase() || '—'; counts[c] = (counts[c] || 0) + 1; });
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
@@ -494,7 +539,10 @@ function vClear() {
 
 /* ─── RENDER ─── */
 function render() {
-  const f = DATA.funnel || {};
+  // One date-filtered list drives the funnel cards, the nationality breakdown,
+  // and the visitor table — so all three reflect the chosen date range.
+  const vs = applyDateFilter(DATA.visitors || []);
+  const f = computeFunnel(vs);
   const cards = [
     { k: 'Visitors', v: f.visitors || 0, cls: 'gold', note: 'landed on the site' },
     { k: 'Opened chat', v: f.opened || 0, note: 'engaged the bubble' },
@@ -507,10 +555,10 @@ function render() {
   document.getElementById('funnelCards').innerHTML = cards.map(c =>
     `<div class="card ${c.cls || ''}"><div class="k">${c.k}</div><div class="v">${c.v}</div><div class="note">${c.note}</div></div>`
   ).join('');
-  renderBreakdown();
+  renderGaStats();
+  renderBreakdown(vs);
   renderDaily();
 
-  const vs = applyDateFilter(DATA.visitors || []);
   const body = document.getElementById('visitorRows');
   if (!vs.length) {
     document.getElementById('visitorCount').textContent = '';
