@@ -1312,6 +1312,285 @@ app.post('/unsubscribe', express.urlencoded({ extended: false }), (req, res) => 
   res.json({ ok: true });
 });
 
+// ─── DAILY WEBSITE REPORT (Gonxhe site analytics → email at 09:00) ─────────
+// Each morning, at REPORT_HOUR (default 09:00) in REPORT_TZ (Europe/Tirane),
+// email a summary of the PREVIOUS day's website (Gonxhe) activity to
+// reception/owners:
+//   • visitors, broken down by nationality
+//   • messages exchanged with Gonxhe
+//   • most-visited page(s)
+//   • average time visitors spent on the site
+// Data source is web-visitors.json (the same store the Website dashboard reads).
+// The email is sent FROM flowreport26@gmail.com (the reports mailbox) — set
+// REPORT_SMTP_USER / REPORT_SMTP_PASS (a Gmail App Password) on Render.
+
+const REPORT_TZ = process.env.REPORT_TZ || 'Europe/Tirane';
+const REPORT_HOUR = Number(process.env.REPORT_HOUR || 9);
+const REPORT_STATE_FILE = 'daily-report-state.json';
+const REPORT_DEFAULT_TO =
+  'info@hotel-flower.com, redathana@gmail.com, ernestcaci@gmail.com, reception@hotel-flower.com';
+
+let regionNames = null;
+try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch (_) {}
+function countryName(code) {
+  const c = String(code || '').toUpperCase();
+  if (!c) return 'E panjohur';
+  if (c === 'XK') return 'Kosovo';
+  try { return (regionNames && regionNames.of(c)) || c; } catch (_) { return c; }
+}
+
+// YYYY-MM-DD for an ISO timestamp, evaluated in the report timezone.
+function tzDateString(iso, tz = REPORT_TZ) {
+  try {
+    const d = iso ? new Date(iso) : new Date();
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(d); // en-CA → YYYY-MM-DD
+  } catch (_) { return String(iso || '').slice(0, 10); }
+}
+
+// The calendar day before a YYYY-MM-DD string (DST-safe via UTC noon).
+function previousDay(dayStr) {
+  const [y, m, d] = String(dayStr).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+// Current {hour, minute} in the report timezone.
+function tzHourMinute(tz = REPORT_TZ) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    return {
+      hour: Number(parts.find(p => p.type === 'hour').value),
+      minute: Number(parts.find(p => p.type === 'minute').value),
+    };
+  } catch (_) { const d = new Date(); return { hour: d.getHours(), minute: d.getMinutes() }; }
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '0s';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return rs ? `${m}m ${rs}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+// Build the report object for a given YYYY-MM-DD (defaults to today, Tirane).
+function buildDailyReport(dateStr) {
+  const day = dateStr || tzDateString(new Date().toISOString());
+  const visitorsMap = readJSON(WEB_VISITORS_FILE, {});
+  // A visitor "belongs" to a day if their most recent activity fell on it.
+  const visitors = Object.values(visitorsMap).filter(v => {
+    const seen = v.lastSeen || v.firstSeen;
+    return seen && tzDateString(seen) === day;
+  });
+
+  // Nationality breakdown (ISO alpha-2 → full name; blank → Unknown).
+  const byCountry = {};
+  for (const v of visitors) {
+    const code = (v.country || '').toUpperCase() || 'XX';
+    byCountry[code] = (byCountry[code] || 0) + 1;
+  }
+  const nationalities = Object.entries(byCountry)
+    .map(([code, count]) => ({
+      code,
+      name: code === 'XX' ? 'E panjohur' : countryName(code),
+      count,
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+  // Messages exchanged with Gonxhe (per-visitor reply counter).
+  let totalMessages = 0, chatters = 0;
+  for (const v of visitors) {
+    const m = v.messages || 0;
+    if (m > 0) { totalMessages += m; chatters++; }
+  }
+
+  // Most-visited pages (count page-views across today's visitors; drop query).
+  const pageCounts = {};
+  for (const v of visitors) {
+    for (const p of (v.pages || [])) {
+      const key = (String(p).split('?')[0] || '/') || '/';
+      pageCounts[key] = (pageCounts[key] || 0) + 1;
+    }
+  }
+  const topPages = Object.entries(pageCounts)
+    .map(([page, count]) => ({ page, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // Time on site: dwell = lastSeen − firstSeen per visitor, averaged.
+  let dwellSum = 0, dwellCount = 0;
+  for (const v of visitors) {
+    if (v.firstSeen && v.lastSeen) {
+      const ms = new Date(v.lastSeen) - new Date(v.firstSeen);
+      if (ms > 0) { dwellSum += ms; dwellCount++; }
+    }
+  }
+  const avgDwellMs = dwellCount ? Math.round(dwellSum / dwellCount) : 0;
+
+  return {
+    day,
+    totalVisitors: visitors.length,
+    nationalities,
+    totalMessages,
+    chatters,
+    topPage: topPages[0] || null,
+    topPages,
+    avgDwellMs,
+    totalDwellMs: dwellSum,
+  };
+}
+
+function reportEmailHTML(r) {
+  const C = { navy: '#0E1A2E', card: '#142540', gold: '#C4A96A', dim: '#9C8550', text: '#E8D9B5' };
+  const row = (label, value) =>
+    `<tr><td style="padding:10px 0;border-bottom:1px solid rgba(196,169,106,0.15);color:${C.dim};font-size:13px;">${label}</td>` +
+    `<td style="padding:10px 0;border-bottom:1px solid rgba(196,169,106,0.15);color:${C.text};font-size:15px;text-align:right;font-weight:bold;">${value}</td></tr>`;
+
+  const natRows = r.nationalities.length
+    ? r.nationalities.map(n =>
+        `<tr><td style="padding:6px 0;color:${C.text};font-size:14px;">${n.name}</td>` +
+        `<td style="padding:6px 0;color:${C.gold};font-size:14px;text-align:right;">${n.count}</td></tr>`).join('')
+    : `<tr><td colspan="2" style="padding:6px 0;color:${C.dim};font-size:13px;">Asnjë vizitor sot.</td></tr>`;
+
+  const pageRows = r.topPages.length
+    ? r.topPages.map(p =>
+        `<tr><td style="padding:6px 0;color:${C.text};font-size:14px;font-family:monospace;">${p.page}</td>` +
+        `<td style="padding:6px 0;color:${C.gold};font-size:14px;text-align:right;">${p.count}</td></tr>`).join('')
+    : `<tr><td colspan="2" style="padding:6px 0;color:${C.dim};font-size:13px;">Asnjë faqe e regjistruar.</td></tr>`;
+
+  return `<!doctype html><html lang="sq"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/><title>Raporti Ditor — Gonxhe Website</title></head>
+<body style="margin:0;background:${C.navy};font-family:Georgia,serif;color:${C.text};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.navy};padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:${C.card};border:1px solid rgba(196,169,106,0.25);border-radius:14px;overflow:hidden;">
+        <tr><td style="padding:28px 32px;border-bottom:1px solid rgba(196,169,106,0.2);text-align:center;">
+          <div style="font-family:'Playfair Display',Georgia,serif;font-style:italic;font-size:22px;color:${C.gold};letter-spacing:1px;">Flower Hotels &amp; Resorts</div>
+          <div style="font-size:11px;color:${C.dim};letter-spacing:3px;text-transform:uppercase;margin-top:6px;">Gonxhe · Raporti Ditor i Website-it</div>
+          <div style="font-size:13px;color:${C.text};margin-top:10px;">${r.day}</div>
+        </td></tr>
+        <tr><td style="padding:24px 32px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            ${row('Vizitorë në website', r.totalVisitors)}
+            ${row('Biseda me Gonxhe (vizitorë)', r.chatters)}
+            ${row('Mesazhe të shkëmbyera me Gonxhe', r.totalMessages)}
+            ${row('Faqja më e vizituar', r.topPage ? `${r.topPage.page} (${r.topPage.count})` : '—')}
+            ${row('Kohë mesatare e qëndrimit', fmtDuration(r.avgDwellMs))}
+          </table>
+        </td></tr>
+        <tr><td style="padding:8px 32px 24px;">
+          <div style="color:${C.gold};font-size:13px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Sipas kombësisë</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${natRows}</table>
+        </td></tr>
+        <tr><td style="padding:8px 32px 28px;">
+          <div style="color:${C.gold};font-size:13px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Faqet më të vizituara</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${pageRows}</table>
+        </td></tr>
+        <tr><td style="padding:18px 32px;border-top:1px solid rgba(196,169,106,0.2);background:${C.navy};text-align:center;font-size:11px;color:${C.dim};line-height:1.6;">
+          Raport ditor Gonxhe Website<br/>
+          Dërguar në ${String(REPORT_HOUR).padStart(2, '0')}:00 (${REPORT_TZ})
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+function reportEmailText(r) {
+  const lines = [
+    `Gonxhe Website — Raporti Ditor ${r.day}`,
+    '',
+    `Vizitorë në website: ${r.totalVisitors}`,
+    `Biseda me Gonxhe (vizitorë): ${r.chatters}`,
+    `Mesazhe të shkëmbyera me Gonxhe: ${r.totalMessages}`,
+    `Faqja më e vizituar: ${r.topPage ? `${r.topPage.page} (${r.topPage.count})` : '—'}`,
+    `Kohë mesatare e qëndrimit: ${fmtDuration(r.avgDwellMs)}`,
+    '',
+    'Sipas kombësisë:',
+    ...(r.nationalities.length ? r.nationalities.map(n => `  ${n.name}: ${n.count}`) : ['  —']),
+    '',
+    'Faqet më të vizituara:',
+    ...(r.topPages.length ? r.topPages.map(p => `  ${p.page}: ${p.count}`) : ['  —']),
+  ];
+  return lines.join('\n');
+}
+
+// Build a Gmail transporter for the reports mailbox (flowreport26@gmail.com).
+// Falls back to the CRM SMTP creds only if the report-specific ones are absent.
+function getReportTransporter() {
+  const user = process.env.REPORT_SMTP_USER || process.env.SMTP_USER;
+  const pass = process.env.REPORT_SMTP_PASS || process.env.SMTP_PASS;
+  if (!user || !pass) return null;
+  return { transporter: nodemailer.createTransport({ service: 'gmail', auth: { user, pass } }), user };
+}
+
+async function sendDailyReport(report) {
+  const built = getReportTransporter();
+  if (!built) throw new Error('REPORT_SMTP_USER/REPORT_SMTP_PASS (or SMTP_USER/SMTP_PASS) not configured');
+  const to = (process.env.REPORT_TO || REPORT_DEFAULT_TO)
+    .split(',').map(s => s.trim()).filter(Boolean);
+  await built.transporter.sendMail({
+    from: `"Flower Hotels & Resorts — Gonxhe" <${built.user}>`,
+    to,
+    subject: `Gonxhe Website — Raporti Ditor ${report.day}`,
+    text: reportEmailText(report),
+    html: reportEmailHTML(report),
+  });
+  return { to, from: built.user };
+}
+
+// Minute-resolution scheduler. Sends once per day at/after REPORT_HOUR, guarded
+// by a persisted lastSentDate so a restart never double-sends.
+function startDailyReportScheduler() {
+  let state = readJSON(REPORT_STATE_FILE, { lastSentDate: '' });
+  const tick = async () => {
+    try {
+      const today = tzDateString(new Date().toISOString());
+      const { hour } = tzHourMinute();
+      if (hour >= REPORT_HOUR && state.lastSentDate !== today) {
+        // At 09:00 today we report on yesterday's activity.
+        const reportDay = previousDay(today);
+        const report = buildDailyReport(reportDay);
+        const info = await sendDailyReport(report);
+        state = { lastSentDate: today, reportDay, lastSentAt: new Date().toISOString(), to: info.to };
+        writeJSON(REPORT_STATE_FILE, state);
+        console.log(`Daily website report sent for ${reportDay} → ${info.to.join(', ')}`);
+      }
+    } catch (e) {
+      console.error('daily report tick failed', e);
+    }
+  };
+  setInterval(tick, 60 * 1000);   // check every minute
+  setTimeout(tick, 10 * 1000);    // and shortly after boot (in case we restarted past 23:00)
+  console.log(`Daily report scheduler armed for ${REPORT_HOUR}:00 ${REPORT_TZ}`);
+}
+
+// Preview the computed report (and its HTML) without sending — dashboard-only.
+app.get('/api/daily-report/preview', requireDashboardAuth, (req, res) => {
+  const day = req.query.day ? String(req.query.day) : tzDateString(new Date().toISOString());
+  const report = buildDailyReport(day);
+  res.json({ report, html: reportEmailHTML(report) });
+});
+
+// Send the report immediately (manual trigger for testing) — dashboard-only.
+app.post('/api/daily-report/run', requireDashboardAuth, async (req, res) => {
+  try {
+    const day = (req.body && req.body.day) ? String(req.body.day) : tzDateString(new Date().toISOString());
+    const report = buildDailyReport(day);
+    const info = await sendDailyReport(report);
+    res.json({ ok: true, day, sentTo: info.to, from: info.from, report });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
 // ─── PAGES ───────────────────────────────────────────────────────────────
 const noCache = (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -1348,4 +1627,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
   console.log(`Flower Guest listening on :${PORT}`);
+  startDailyReportScheduler();
 });
