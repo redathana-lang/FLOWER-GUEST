@@ -247,8 +247,8 @@ tbody tr:last-child td { border-bottom: none; }
   <div class="section-title" style="margin-top:24px;">Visitors <span class="muted" id="visitorCount"></span></div>
   <div class="vfilter">
     <span class="vf-label">Filter by date</span>
-    <label>From <input type="date" id="vFrom" onchange="render()" /></label>
-    <label>To <input type="date" id="vTo" onchange="render()" /></label>
+    <label>From <input type="date" id="vFrom" onchange="onFilterChange()" /></label>
+    <label>To <input type="date" id="vTo" onchange="onFilterChange()" /></label>
     <button class="gbtn ghost" onclick="vQuick(0)">Today</button>
     <button class="gbtn ghost" onclick="vQuick(7)">Last 7 days</button>
     <button class="gbtn ghost" onclick="vClear()">All</button>
@@ -315,6 +315,11 @@ tbody tr:last-child td { border-bottom: none; }
 let PASSWORD = '';
 let DATA = { visitors: [], funnel: {} };
 let refreshTimer = null;
+// Visitor table: render only the most-recent N rows so the page stays light
+// even with thousands of historical visitors. "Show all" lifts the cap.
+const VISITOR_LIMIT = 50;
+let visitorShowAll = false;
+function onFilterChange() { visitorShowAll = false; render(); }
 
 /* ─── AUTH ─── */
 async function tryUnlock(e) {
@@ -471,11 +476,13 @@ function vQuick(days) {
   const from = new Date(); from.setDate(from.getDate() - days);
   document.getElementById('vTo').value = dayKey(today);
   document.getElementById('vFrom').value = dayKey(from);
+  visitorShowAll = false;
   render();
 }
 function vClear() {
   document.getElementById('vFrom').value = '';
   document.getElementById('vTo').value = '';
+  visitorShowAll = false;
   render();
 }
 
@@ -498,17 +505,22 @@ function render() {
   renderDaily();
 
   const vs = applyDateFilter(DATA.visitors || []);
-  document.getElementById('visitorCount').textContent = vs.length ? '· ' + vs.length : '';
   const body = document.getElementById('visitorRows');
   if (!vs.length) {
+    document.getElementById('visitorCount').textContent = '';
     body.innerHTML = '<tr><td colspan="7"><div class="empty">No visitors in this date range</div></td></tr>';
     return;
   }
-  body.innerHTML = vs.map((v, i) => {
+  // Visitors arrive newest-first from the API; cap the rendered rows so a long
+  // history doesn't slow the page. The count shows "shown of total".
+  const shown = visitorShowAll ? vs : vs.slice(0, VISITOR_LIMIT);
+  document.getElementById('visitorCount').textContent =
+    '· ' + (shown.length < vs.length ? `${shown.length} of ${vs.length}` : vs.length);
+  let html = shown.map(v => {
     const st = stageOf(v.funnel);
     const name = v.name ? `<span class="who-name">${esc(v.name)}</span>` : '<span class="muted">Anonymous</span>';
     const mail = v.email ? `<div class="who-mail">${esc(v.email)}</div>` : (v.phone ? `<div class="who-mail">${esc(v.phone)}</div>` : '');
-    return `<tr onclick="openDrawer(${i})">
+    return `<tr onclick="openDrawer('${v.sessionId}')">
       <td><span class="flag">${flagEmoji(v.country)}</span><span class="muted">${v.country || '—'}</span></td>
       <td>${name}${mail}</td>
       <td><span class="pill ${st.cls}">${st.label}</span></td>
@@ -518,11 +530,18 @@ function render() {
       <td class="muted">${fmt(v.lastSeen)}</td>
     </tr>`;
   }).join('');
+  if (shown.length < vs.length) {
+    html += `<tr class="show-more-row"><td colspan="7" style="text-align:center; padding:14px;">
+      <button class="gbtn ghost" onclick="visitorShowAll=true; render();">Show all ${vs.length} visitors</button>
+      <span class="muted" style="margin-left:10px;">Showing the ${VISITOR_LIMIT} most recent — narrow the date range to focus.</span>
+    </td></tr>`;
+  }
+  body.innerHTML = html;
 }
 
 /* ─── DRAWER ─── */
-function openDrawer(i) {
-  const v = (DATA.visitors || [])[i];
+function openDrawer(sessionId) {
+  const v = (DATA.visitors || []).find(x => x.sessionId === sessionId);
   if (!v) return;
   const st = stageOf(v.funnel);
   document.getElementById('drawerTitle').innerHTML = `${flagEmoji(v.country)} ${esc(v.name || 'Anonymous visitor')}`;
