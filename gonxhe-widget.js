@@ -46,8 +46,8 @@
   var GREETING = 'Mirë se erdhët në Flower Hotels & Resorts. Welcome to Flower Hotels & Resorts. ' +
     'Unë jam Gonxhe, koncierge juaj personale. I\'m Gonxhe, your personal concierge. ' +
     'Si do të preferonit të bisedonim — në Shqip apo në Anglisht? / Would you prefer to chat in Albanian or English?';
-  var ERR_MSG = 'I do apologise — I\'m having a brief trouble connecting. Please reach our reception on WhatsApp: https://wa.me/355692073380';
-  var CLOSING = 'It has been my pleasure. For anything more, our team is on WhatsApp: https://wa.me/355692073380';
+  var ERR_MSG = 'I do apologise — I\'m having a brief trouble connecting. Please reach our reservations team on WhatsApp: https://wa.me/355676040707';
+  var CLOSING = 'It has been my pleasure. For anything more, our reservations team is on WhatsApp: https://wa.me/355676040707';
 
   var history = [], opened = false, sending = false, turns = 0;
 
@@ -270,8 +270,6 @@
             if (!lastBooking.checkin && ud.checkin) lastBooking.checkin = ud.checkin;
             if (!lastBooking.checkout && ud.checkout) lastBooking.checkout = ud.checkout;
           }
-          // Capture the guest's room/service request from their last message.
-          if (!lastRequest) lastRequest = extractRequest(val);
           // Show the enquiry table as soon as we have at least a check-in date.
           if (lastBooking && (lastBooking.checkin || lastBooking.checkout)) {
             showFollowup();
@@ -288,20 +286,44 @@
     }
     return 'for your dates';
   }
-  // Extract ISO dates (YYYY-MM-DD or DD/MM/YYYY etc.) from free text.
+  // Extract dates from free text — ISO, DD/MM/YYYY, and natural language (EN + AL).
+  var MONTH_MAP = {
+    jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,
+    may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,
+    sep:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12,
+    janar:1,shkurt:2,mars:3,prill:4,maj:5,qershor:6,
+    korrik:7,gusht:8,shtator:9,tetor:10,nentor:11,dhjetor:12
+  };
   function datesFromText(text) {
     var s = String(text || '');
     var found = [];
+    var cy = new Date().getFullYear();
     // ISO: 2026-07-15
     var isoRe = /\b(\d{4}-\d{2}-\d{2})\b/g, im;
     while ((im = isoRe.exec(s)) !== null) found.push(im[1]);
-    // DD/MM/YYYY or D.M.YYYY etc.
+    // DD/MM/YYYY or D.M.YYYY
     var slashRe = /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/g, sm;
     while ((sm = slashRe.exec(s)) !== null) {
       var y = sm[3].length === 2 ? '20' + sm[3] : sm[3];
       var mo = sm[2].length === 1 ? '0' + sm[2] : sm[2];
       var dy = sm[1].length === 1 ? '0' + sm[1] : sm[1];
       found.push(y + '-' + mo + '-' + dy);
+    }
+    // Natural language: "10 July 2026", "10th July", "July 10", "10 Korrik"
+    var mnames = Object.keys(MONTH_MAP).join('|');
+    var nlRe = new RegExp(
+      '\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(' + mnames + ')(?:\\s+(\\d{4}))?\\b' +
+      '|\\b(' + mnames + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:[,\\s]+(\\d{4}))?\\b',
+      'gi'
+    );
+    var nm;
+    while ((nm = nlRe.exec(s)) !== null) {
+      var d2, m2, yr2;
+      if (nm[1]) { d2 = +nm[1]; m2 = MONTH_MAP[nm[2].toLowerCase()]; yr2 = nm[3] ? +nm[3] : cy; }
+      else        { m2 = MONTH_MAP[nm[4].toLowerCase()]; d2 = +nm[5]; yr2 = nm[6] ? +nm[6] : cy; }
+      if (d2 && m2 && yr2) {
+        found.push(yr2 + '-' + (m2 < 10 ? '0' : '') + m2 + '-' + (d2 < 10 ? '0' : '') + d2);
+      }
     }
     if (found.length >= 2) return { checkin: found[0], checkout: found[1] };
     if (found.length === 1) return { checkin: found[0], checkout: '' };
@@ -367,7 +389,7 @@
         '<label class="gnxw-dl">Children<input class="gnxw-kd" type="number" min="0" value="' + kd + '" /></label>' +
       '</div>' +
       '<textarea class="gnxw-req" rows="2" placeholder="Room type / special request…">' + rq + '</textarea>' +
-      '<button class="gnxw-lead-send">📲 Send to reservation desk on WhatsApp</button>';
+      '<button class="gnxw-lead-send">📲 Request best Price</button>';
     msgs.appendChild(form);
     followupEls.push(form);
     msgs.scrollTop = msgs.scrollHeight;
@@ -383,8 +405,7 @@
     var btn = form.querySelector('.gnxw-lead-send');
     function submitLead() {
       var digits = (num.value || '').replace(/[^0-9]/g, '');
-      if (digits.length < 5) { num.style.borderColor = '#B26A6A'; num.focus(); return; }
-      var phone = sel.value + digits;
+      var phone = digits.length >= 5 ? sel.value + digits : '';
       var nm = (nameEl.value || '').trim();
       var cin = ciEl.value || '', cout = coEl.value || '';
       var adv = (adEl.value || '').trim(), kdv = (kdEl.value || '').trim();
@@ -397,7 +418,7 @@
       var lines = [
         '🌸 New booking enquiry from the website',
         'Name: ' + (nm || '—'),
-        'WhatsApp: ' + phone,
+        'WhatsApp: ' + (phone || '—'),
         'Check-in: ' + (cin || '—'),
         'Check-out: ' + (cout || '—'),
         'Adults: ' + (adv || '—') + ', Children: ' + (kdv || '0')
