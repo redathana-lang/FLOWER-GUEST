@@ -1834,6 +1834,76 @@ app.post('/api/daily-report/run', requireDashboardAuth, async (req, res) => {
   }
 });
 
+// ─── GOOGLE SHEETS DAILY SYNC ─────────────────────────────────────────────
+// Exports guests, events, conversations, and web visitors to a Google Sheet
+// once per day via an Apps Script webhook (GSHEETS_WEBHOOK_URL env var).
+// Runs at REPORT_HOUR + 1 minute (right after the daily email report).
+
+async function syncToGoogleSheets() {
+  const webhookUrl = process.env.GSHEETS_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    const guests = readJSON('guests.json', []);
+    const events = readJSON('events.json', []);
+    const websiteConversations = Object.values(readJSON(WEBSITE_CONV_FILE, {}))
+      .sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
+    const hotelConversations = Object.values(readJSON(HOTEL_CONV_FILE, {}))
+      .sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
+    const webVisitors = Object.values(readJSON(WEB_VISITORS_FILE, {}))
+      .sort((a, b) => (a.lastSeen > b.lastSeen ? -1 : 1));
+
+    const payload = {
+      secret: process.env.GSHEETS_SYNC_SECRET || '',
+      guests,
+      events,
+      websiteConversations,
+      hotelConversations,
+      webVisitors,
+    };
+
+    const resp = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+    const result = await resp.json();
+    console.log('Google Sheets sync:', result);
+  } catch (e) {
+    console.error('Google Sheets sync failed:', e.message);
+  }
+}
+
+// Manual trigger — dashboard-only (for testing the sync without waiting for midnight).
+app.post('/api/gsheets-sync', requireDashboardAuth, async (_req, res) => {
+  if (!process.env.GSHEETS_WEBHOOK_URL) {
+    return res.status(503).json({ error: 'GSHEETS_WEBHOOK_URL not configured' });
+  }
+  await syncToGoogleSheets();
+  res.json({ ok: true });
+});
+
+function startGSheetsSyncScheduler() {
+  if (!process.env.GSHEETS_WEBHOOK_URL) return;
+  let lastSyncDate = '';
+  const tick = async () => {
+    try {
+      const today = tzDateString(new Date().toISOString());
+      const { hour, minute } = tzHourMinute();
+      // Sync at REPORT_HOUR:01 — 1 minute after the daily email report
+      if (hour >= REPORT_HOUR && minute >= 1 && lastSyncDate !== today) {
+        lastSyncDate = today;
+        await syncToGoogleSheets();
+      }
+    } catch (e) {
+      console.error('GSheets sync tick failed', e);
+    }
+  };
+  setInterval(tick, 60 * 1000);
+  console.log('Google Sheets sync scheduler armed');
+}
+
 // ─── PAGES ───────────────────────────────────────────────────────────────
 const noCache = (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -1875,4 +1945,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`Flower Guest listening on :${PORT}`);
   startDailyReportScheduler();
+  startGSheetsSyncScheduler();
 });
