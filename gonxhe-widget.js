@@ -55,7 +55,7 @@
   // haven't left a number, ask for their WhatsApp so reception can help.
   var FOLLOWUP_MS = 5 * 60 * 1000; // 5 minutes after the booking-engine click
   var RESERVATION_WA = '355676040707'; // Flower reservation desk (+355 67 604 0707)
-  var lastBooking = null, followupTimer = null, followupShown = false, leadGiven = false;
+  var lastBooking = null, lastRequest = '', followupTimer = null, followupShown = false, leadGiven = false;
   var DIAL_CODES = [
     ['Albania', '+355'], ['Kosovo', '+383'], ['North Macedonia', '+389'], ['Montenegro', '+382'],
     ['Italy', '+39'], ['Germany', '+49'], ['United Kingdom', '+44'], ['Austria', '+43'], ['Switzerland', '+41'],
@@ -165,6 +165,8 @@
   .gnxw-dl { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: rgba(42,37,32,0.6); }\
   .gnxw-dl input { border: 1px solid rgba(196,169,106,0.35); border-radius: 9px; padding: 8px 10px; font-size: 13px; font-family: inherit; color: #2A2520; background: #FBF8F2; outline: none; }\
   .gnxw-dl input:focus { border-color: #C4A96A; }\
+  .gnxw-req { width: 100%; border: 1px solid rgba(196,169,106,0.35); border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit; color: #2A2520; background: #FBF8F2; outline: none; resize: none; margin-bottom: 9px; }\
+  .gnxw-req:focus { border-color: #C4A96A; }\
   @media (max-width: 480px) {\
     .gnxw-panel { bottom: 0; right: 0; width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; border: none; }\
     .gnxw-fab { bottom: 18px; right: 18px; }\
@@ -248,12 +250,32 @@
         addMsg('bot', text);
         history.push({ role: 'assistant', content: text });
         post('/api/conversation', { sessionId: SID, channel: 'website', messages: history });
-        // The moment she offers a booking link, invite a direct preferential
-        // enquiry — once per session, with the dates from her link pre-filled.
+        // Show the reservation enquiry form whenever Gonxhe has dates to offer —
+        // either from a Cloudbeds link or from dates mentioned naturally in the reply.
         if (/cloudbeds\.com/i.test(text)) {
           var b = bookingFromText(text);
           if (b) lastBooking = b;
           showFollowup();
+        } else {
+          var d = datesFromText(text);
+          if (d) {
+            if (!lastBooking) lastBooking = {};
+            if (!lastBooking.checkin && d.checkin) lastBooking.checkin = d.checkin;
+            if (!lastBooking.checkout && d.checkout) lastBooking.checkout = d.checkout;
+          }
+          // Also pick up dates from what the user just typed.
+          var ud = datesFromText(val);
+          if (ud) {
+            if (!lastBooking) lastBooking = {};
+            if (!lastBooking.checkin && ud.checkin) lastBooking.checkin = ud.checkin;
+            if (!lastBooking.checkout && ud.checkout) lastBooking.checkout = ud.checkout;
+          }
+          // Capture the guest's room/service request from their last message.
+          if (!lastRequest) lastRequest = extractRequest(val);
+          // Show the enquiry table as soon as we have at least a check-in date.
+          if (lastBooking && (lastBooking.checkin || lastBooking.checkout)) {
+            showFollowup();
+          }
         }
       })
       .catch(function () { typing.remove(); addMsg('bot', ERR_MSG); })
@@ -265,6 +287,32 @@
       return 'for ' + lastBooking.checkin + ' to ' + lastBooking.checkout;
     }
     return 'for your dates';
+  }
+  // Extract ISO dates (YYYY-MM-DD or DD/MM/YYYY etc.) from free text.
+  function datesFromText(text) {
+    var s = String(text || '');
+    var found = [];
+    // ISO: 2026-07-15
+    var isoRe = /\b(\d{4}-\d{2}-\d{2})\b/g, im;
+    while ((im = isoRe.exec(s)) !== null) found.push(im[1]);
+    // DD/MM/YYYY or D.M.YYYY etc.
+    var slashRe = /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/g, sm;
+    while ((sm = slashRe.exec(s)) !== null) {
+      var y = sm[3].length === 2 ? '20' + sm[3] : sm[3];
+      var mo = sm[2].length === 1 ? '0' + sm[2] : sm[2];
+      var dy = sm[1].length === 1 ? '0' + sm[1] : sm[1];
+      found.push(y + '-' + mo + '-' + dy);
+    }
+    if (found.length >= 2) return { checkin: found[0], checkout: found[1] };
+    if (found.length === 1) return { checkin: found[0], checkout: '' };
+    return null;
+  }
+  // Pull a short room/request summary from the guest's message.
+  function extractRequest(text) {
+    var s = String(text || '').trim();
+    if (!s || s.length < 4) return '';
+    // Take up to the first 120 chars as the request description.
+    return s.length > 120 ? s.slice(0, 117) + '…' : s;
   }
   // Pull the dates/guests out of a Cloudbeds link inside one of Gonxhe's replies.
   function bookingFromText(text) {
@@ -303,6 +351,7 @@
     var opts = DIAL_CODES.map(function (c) {
       return '<option value="' + c[1] + '">' + c[1] + '  ' + c[0] + '</option>';
     }).join('');
+    var rq = esc(lastRequest);
     form.innerHTML =
       '<div class="gnxw-lead-row">' +
         '<select class="gnxw-cc" aria-label="Country code">' + opts + '</select>' +
@@ -317,7 +366,8 @@
         '<label class="gnxw-dl">Adults<input class="gnxw-ad" type="number" min="1" value="' + ad + '" /></label>' +
         '<label class="gnxw-dl">Children<input class="gnxw-kd" type="number" min="0" value="' + kd + '" /></label>' +
       '</div>' +
-      '<button class="gnxw-lead-send">Send to reception on WhatsApp</button>';
+      '<textarea class="gnxw-req" rows="2" placeholder="Room type / special request…">' + rq + '</textarea>' +
+      '<button class="gnxw-lead-send">📲 Send to reservation desk on WhatsApp</button>';
     msgs.appendChild(form);
     followupEls.push(form);
     msgs.scrollTop = msgs.scrollHeight;
@@ -329,6 +379,7 @@
     var coEl = form.querySelector('.gnxw-co');
     var adEl = form.querySelector('.gnxw-ad');
     var kdEl = form.querySelector('.gnxw-kd');
+    var reqEl = form.querySelector('.gnxw-req');
     var btn = form.querySelector('.gnxw-lead-send');
     function submitLead() {
       var digits = (num.value || '').replace(/[^0-9]/g, '');
@@ -337,23 +388,25 @@
       var nm = (nameEl.value || '').trim();
       var cin = ciEl.value || '', cout = coEl.value || '';
       var adv = (adEl.value || '').trim(), kdv = (kdEl.value || '').trim();
+      var req = (reqEl.value || '').trim();
       leadGiven = true;
       if (followupTimer) clearTimeout(followupTimer);
       // Record it in the dashboard too (non-blocking) so reception sees it there.
-      post('/api/web/lead', { sessionId: SID, name: nm, phone: phone, checkin: cin, checkout: cout, adults: adv, kids: kdv });
+      post('/api/web/lead', { sessionId: SID, name: nm, phone: phone, checkin: cin, checkout: cout, adults: adv, kids: kdv, request: req });
       // Compose the enquiry as a WhatsApp message to the reservation desk.
       var lines = [
-        'New booking enquiry from the website',
+        '🌸 New booking enquiry from the website',
         'Name: ' + (nm || '—'),
         'WhatsApp: ' + phone,
         'Check-in: ' + (cin || '—'),
         'Check-out: ' + (cout || '—'),
         'Adults: ' + (adv || '—') + ', Children: ' + (kdv || '0')
       ];
+      if (req) lines.push('Request: ' + req);
       lines.push('Please send me the best available offer for these dates. Thank you!');
       var wa = 'https://wa.me/' + RESERVATION_WA + '?text=' + encodeURIComponent(lines.join('\n'));
       form.remove();
-      addMsg('bot', 'Perfect — your enquiry is ready for our reception team. Tap below to send it on WhatsApp and they\'ll reply with the best offer ' + datesPhrase() + '. 🌸\n\n[📲 Send to reception on WhatsApp](' + wa + ')');
+      addMsg('bot', 'Perfect — your enquiry is ready for our reservation desk. Tap below to send it on WhatsApp and they\'ll reply with the best offer ' + datesPhrase() + '. 🌸\n\n[📲 Send to reservation desk on WhatsApp](' + wa + ')');
       try { window.open(wa, '_blank'); } catch (e) {}
     }
     btn.addEventListener('click', submitLead);
