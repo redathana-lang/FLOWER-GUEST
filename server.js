@@ -447,13 +447,17 @@ app.post('/api/feedback', (req, res) => {
   res.json({ ok: true });
 });
 
+const WEBSITE_CONV_FILE = 'website-conversations.json';
+const HOTEL_CONV_FILE = 'hotel-conversations.json';
+
 app.post('/api/conversation', (req, res) => {
   const { sessionId, room, guest, messages, channel } = req.body || {};
   if (!sessionId || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'sessionId and messages required' });
   }
   const isWebsite = channel === 'website';
-  const all = readJSON('conversations.json', {});
+  const file = isWebsite ? WEBSITE_CONV_FILE : HOTEL_CONV_FILE;
+  const all = readJSON(file, {});
   all[sessionId] = {
     sessionId,
     channel: isWebsite ? 'website' : 'guest',
@@ -467,9 +471,7 @@ app.post('/api/conversation', (req, res) => {
     keys.sort((a, b) => (all[a].updatedAt > all[b].updatedAt ? 1 : -1));
     while (keys.length > 1000) delete all[keys.shift()];
   }
-  writeJSON('conversations.json', all);
-  // Make sure a website visitor record exists (with resolved country) even if
-  // the widget's "opened" ping was missed.
+  writeJSON(file, all);
   if (isWebsite && !isBotRequest(req)) {
     try { upsertWebVisitor(sessionId, { funnel: { opened: true } }, req); }
     catch (e) { console.error('web visitor (conversation) update failed', e); }
@@ -655,13 +657,91 @@ const CAPTURE_LEAD_TOOL = {
     },
   },
 };
-const WEBSITE_TOOLS = [CAPTURE_LEAD_TOOL];
+// ─── WEBSITE TOOL — check_trinosoft_availability ─────────────────────────────
+// Checks real-time room availability by screenshotting the Trinosoft HMS Gantt
+// chart (running on the hotel computer) and analysing it with Claude Vision.
+// Requires TRINOSOFT_BRIDGE_URL env var pointing to the local bridge tunnel.
+const CHECK_AVAILABILITY_TOOL = {
+  name: 'check_trinosoft_availability',
+  description:
+    'Check REAL-TIME room availability in Trinosoft HMS for specific dates. ' +
+    'Call this when a visitor asks if rooms are available, what rooms are free, ' +
+    'or when you want to give them a concrete availability answer before sending a booking link. ' +
+    'You need their check-in date, check-out date, and number of guests. ' +
+    'Returns which room types are available so you can recommend the right rooms.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      checkin:  { type: 'string', description: 'Check-in date in YYYY-MM-DD format.' },
+      checkout: { type: 'string', description: 'Check-out date in YYYY-MM-DD format.' },
+      guests:   { type: 'number', description: 'Total number of guests (adults + children).' },
+    },
+    required: ['checkin', 'checkout'],
+  },
+};
+
+async function runTrinosoftAvailability(input, apiKey) {
+  const bridgeUrl = process.env.TRINOSOFT_BRIDGE_URL;
+  const bridgeKey = process.env.TRINOSOFT_BRIDGE_KEY || 'GonxheBridge26';
+  if (!bridgeUrl) {
+    return { available: null, note: 'Trinosoft bridge not configured — direct guest to booking engine.' };
+  }
+  const { checkin, checkout, guests = 2 } = input || {};
+  const url = `${bridgeUrl}/screenshot?checkin=${encodeURIComponent(checkin)}&checkout=${encodeURIComponent(checkout)}&key=${encodeURIComponent(bridgeKey)}`;
+  let imgB64;
+  try {
+    const resp = await fetch(url, { headers: { 'x-bridge-key': bridgeKey }, signal: AbortSignal.timeout(20000) });
+    if (!resp.ok) throw new Error(`Bridge error ${resp.status}`);
+    const buf = await resp.arrayBuffer();
+    imgB64 = Buffer.from(buf).toString('base64');
+  } catch (e) {
+    console.error('Trinosoft bridge fetch failed:', e.message);
+    return { available: null, note: 'Could not reach Trinosoft — direct guest to booking engine.' };
+  }
+
+  // Use Claude Vision to read the Gantt chart
+  const visionResp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: imgB64 } },
+          { type: 'text', text:
+            `This is a Trinosoft HMS Gantt chart showing Flower Hotel room reservations.\n` +
+            `Check-in: ${checkin}, Check-out: ${checkout}, Guests: ${guests}.\n` +
+            `Rooms with NO colored bar during this period are AVAILABLE. Rooms WITH a bar are OCCUPIED.\n` +
+            `Room types: CL = FLOWER Classic Room (sleeps 1-2), LS = FLOWER Loft Suite (sleeps 2-4).\n` +
+            `List which rooms appear FREE (no bar / empty row) for those dates. Be concise.\n` +
+            `Return JSON: {"available_types":["Classic Room","Loft Suite"],"available_rooms":["420 CL","116 LS"...],"occupied_count":12,"note":"..."}`
+          }
+        ]
+      }]
+    })
+  });
+  const vData = await visionResp.json();
+  const raw = (vData.content || []).find(b => b.type === 'text')?.text || '{}';
+  try {
+    const m = raw.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : { available: null, raw };
+  } catch (_) {
+    return { available: null, raw };
+  }
+}
+
+const WEBSITE_TOOLS = [CAPTURE_LEAD_TOOL, CHECK_AVAILABILITY_TOOL];
 
 const WEBSITE_TOOL_GUIDE =
   'You are on the public website with a PROSPECTIVE guest who has not booked. Your priority is to ' +
   'guide them into the Cloudbeds booking engine to book a room directly. When (and only when) a visitor ' +
   'freely shares their name, email, or phone for a callback, quote, or follow-up, call the capture_lead tool ' +
-  'to save it — never ask for personal details just to use the tool, and never invent values.';
+  'to save it — never ask for personal details just to use the tool, and never invent values. ' +
+  'AVAILABILITY: if a visitor asks whether rooms are available or free for specific dates, call ' +
+  'check_trinosoft_availability to check live availability in the hotel HMS — then respond with what you found ' +
+  'and follow immediately with the pre-filled Cloudbeds booking link for their dates.';
 
 function runCaptureLead(sessionId, input, req) {
   const name  = String((input && input.name)  || '').slice(0, 80);
@@ -791,6 +871,8 @@ app.post('/api/gonxhe', async (req, res) => {
             content = JSON.stringify(runBookingTool(tu.input || {}));
           } else if (tu.name === 'capture_lead') {
             content = JSON.stringify(runCaptureLead(sessionId, tu.input || {}, req));
+          } else if (tu.name === 'check_trinosoft_availability') {
+            content = JSON.stringify(await runTrinosoftAvailability(tu.input || {}, apiKey));
           } else {
             content = JSON.stringify({ error: 'unknown_tool' });
           }
@@ -897,10 +979,8 @@ app.get('/api/feedback', requireDashboardAuth, (_req, res) => {
 });
 
 app.get('/api/conversations', requireDashboardAuth, (_req, res) => {
-  const map = readJSON('conversations.json', {});
-  // In-house tab shows guest-app chats only; website chats live in /api/web-activity.
+  const map = readJSON(HOTEL_CONV_FILE, {});
   const list = Object.values(map)
-    .filter(c => c.channel !== 'website')
     .sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
   res.json({ conversations: list });
 });
@@ -909,7 +989,7 @@ app.get('/api/conversations', requireDashboardAuth, (_req, res) => {
 // Joins each website visitor with their transcript and returns funnel totals.
 app.get('/api/web-activity', requireDashboardAuth, (_req, res) => {
   const visitorsMap = readJSON(WEB_VISITORS_FILE, {});
-  const convs = readJSON('conversations.json', {});
+  const convs = readJSON(WEBSITE_CONV_FILE, {});
   const visitors = Object.values(visitorsMap)
     .map(v => ({ ...v, transcript: (convs[v.sessionId] && convs[v.sessionId].messages) || [] }))
     .sort((a, b) => ((a.lastSeen || '') > (b.lastSeen || '') ? -1 : 1));
