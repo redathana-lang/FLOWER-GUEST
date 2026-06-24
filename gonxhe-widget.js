@@ -247,12 +247,28 @@
         typing.remove();
         var text = ((data && data.text) || '').trim() ||
           'I\'m so sorry, I didn\'t quite catch that — could you try again?';
+        // Hidden inquiry trigger: <!--INQUIRY:YYYY-MM-DD|YYYY-MM-DD|N-->
+        // Gonxhe appends this when the visitor gives dates/guests and wants a
+        // personal quote — strip it from display and show the pre-filled form.
+        var inquiryM = text.match(/<!--INQUIRY:([^|>]*)\|([^|>]*)\|([^>]*)-->/);
+        if (inquiryM) {
+          lastBooking = {
+            checkin: inquiryM[1].trim(),
+            checkout: inquiryM[2].trim(),
+            guests: inquiryM[3].trim(),
+          };
+          text = text.replace(/<!--INQUIRY:[^>]*-->/g, '').trim();
+        }
         addMsg('bot', text);
         history.push({ role: 'assistant', content: text });
         post('/api/conversation', { sessionId: SID, channel: 'website', messages: history });
-        // Show the reservation enquiry form whenever Gonxhe has dates to offer —
-        // either from a Cloudbeds link or from dates mentioned naturally in the reply.
-        if (/cloudbeds\.com/i.test(text)) {
+        // Show the reservation enquiry form:
+        // • immediately when Gonxhe includes the hidden <!--INQUIRY:--> token, or
+        // • after a Cloudbeds link (dates extracted from URL), or
+        // • when natural-language dates are detected in the reply.
+        if (inquiryM) {
+          showFollowup();
+        } else if (/cloudbeds\.com/i.test(text)) {
           var b = bookingFromText(text);
           if (b) lastBooking = b;
           showFollowup();

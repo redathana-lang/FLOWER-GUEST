@@ -3,3 +3,5 @@ node_modules/
 .DS_Store
 data/
 .commitmsg.tmp
+.fonts-temp/
+summer-program-2026.pdf

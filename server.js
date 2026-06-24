@@ -732,16 +732,51 @@ async function runTrinosoftAvailability(input, apiKey) {
   }
 }
 
-const WEBSITE_TOOLS = [CAPTURE_LEAD_TOOL, CHECK_AVAILABILITY_TOOL];
+// ─── WEBSITE TOOL — send_room_inquiry ────────────────────────────────────────
+// Widget-side inquiry form collects guest details and sends a prefilled WhatsApp
+// to the reservation desk. This backend tool saves the lead for the dashboard.
+const SEND_ROOM_INQUIRY_TOOL = {
+  name: 'send_room_inquiry',
+  description:
+    "Use this when a website visitor wants to make a room booking inquiry and has freely provided: " +
+    "their name, a WhatsApp or phone number, AND their preferred dates (check-in / check-out) and guest count. " +
+    "This generates a prefilled WhatsApp message to our reservations team on the visitor's behalf. " +
+    "Do NOT call it if any of name, phone, checkin, checkout, or guests is missing — ask first. " +
+    "Never invent values. After the tool returns, show the visitor a short summary table of their inquiry " +
+    "and render the link as: [📲 Send your inquiry to our team](LINK). " +
+    "Tell them the reservations team will reply on WhatsApp shortly.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      name:     { type: 'string', description: "Visitor's name." },
+      phone:    { type: 'string', description: "WhatsApp or phone number, as they gave it." },
+      checkin:  { type: 'string', description: "Check-in date, YYYY-MM-DD." },
+      checkout: { type: 'string', description: "Check-out date, YYYY-MM-DD." },
+      guests:   { type: 'string', description: "Total number of guests (adults + children)." },
+      note:     { type: 'string', description: "Any special requests or preferences, if mentioned." },
+    },
+    required: ['name', 'phone', 'checkin', 'checkout', 'guests'],
+  },
+};
+
+const WEBSITE_TOOLS = [CAPTURE_LEAD_TOOL, CHECK_AVAILABILITY_TOOL, SEND_ROOM_INQUIRY_TOOL];
 
 const WEBSITE_TOOL_GUIDE =
   'You are on the public website with a PROSPECTIVE guest who has not booked. Your priority is to ' +
-  'guide them into the Cloudbeds booking engine to book a room directly. When (and only when) a visitor ' +
-  'freely shares their name, email, or phone for a callback, quote, or follow-up, call the capture_lead tool ' +
-  'to save it — never ask for personal details just to use the tool, and never invent values. ' +
+  'guide them into the Cloudbeds booking engine to book a room directly. ' +
+  'INQUIRY FORM — when a visitor provides their check-in date, check-out date, and guest count AND ' +
+  'clearly wants a personal quote or human follow-up (rather than booking online themselves), respond ' +
+  'warmly and append this EXACT hidden token at the very end of your reply (no space before it): ' +
+  '<!--INQUIRY:YYYY-MM-DD|YYYY-MM-DD|N--> where the values are check-in, check-out, and total guests. ' +
+  'Example: a visitor says "2 adults, 10 to 14 July" → append <!--INQUIRY:2026-07-10|2026-07-14|2-->. ' +
+  'The widget strips the token from display and shows a pre-filled enquiry form immediately. ' +
+  'Never include the token when sending a Cloudbeds booking link — only for the inquiry/personal-quote route. ' +
   'AVAILABILITY: if a visitor asks whether rooms are available or free for specific dates, call ' +
   'check_trinosoft_availability to check live availability in the hotel HMS — then respond with what you found ' +
-  'and follow immediately with the pre-filled Cloudbeds booking link for their dates.';
+  'and follow immediately with the pre-filled Cloudbeds booking link for their dates. ' +
+  'LEAD CAPTURE — when (and only when) a visitor freely shares their name, email, or phone for a ' +
+  'callback, quote, or follow-up, call the capture_lead tool to save it — never ask for details just ' +
+  'to use the tool, and never invent values.';
 
 function runCaptureLead(sessionId, input, req) {
   const name  = String((input && input.name)  || '').slice(0, 80);
@@ -763,6 +798,47 @@ function runCaptureLead(sessionId, input, req) {
     });
   } catch (e) { console.error('lead event log failed', e); }
   return { ok: true, saved: { name, email, phone } };
+}
+
+function runRoomInquiry(sessionId, input, req) {
+  const name     = String((input && input.name)     || '').slice(0, 80);
+  const phone    = String((input && input.phone)    || '').slice(0, 40);
+  const checkin  = String((input && input.checkin)  || '').slice(0, 20);
+  const checkout = String((input && input.checkout) || '').slice(0, 20);
+  const guests   = String((input && input.guests)   || '').slice(0, 10);
+  const note     = String((input && input.note)     || '').slice(0, 280);
+
+  const lines = [
+    'New room inquiry from website',
+    `Name: ${name}`,
+    `WhatsApp: ${phone}`,
+    `Check-in: ${checkin}`,
+    `Check-out: ${checkout}`,
+    `Guests: ${guests}`,
+    ...(note ? [`Note: ${note}`] : []),
+    '',
+    'Please follow up with this guest. Thank you!',
+  ];
+  const waMessage = lines.join('\n');
+  const link = `https://wa.me/${RECEPTION_WA}?text=${encodeURIComponent(waMessage)}`;
+
+  // Save contact to web-visitors so the dashboard sees them
+  upsertWebVisitor(sessionId, {
+    ...(name  ? { name }  : {}),
+    ...(phone ? { phone } : {}),
+    funnel: { leadCaptured: true, inquirySent: true },
+  }, req);
+
+  try {
+    appendItem('events.json', {
+      id: crypto.randomUUID(), ts: new Date().toISOString(),
+      room: '—', type: 'web_room_inquiry',
+      detail: [name, phone, checkin, checkout, `${guests} guests`, note].filter(Boolean).join(' · ').slice(0, 280),
+      guest: name, sessionId: sessionId || '', channel: 'website',
+    });
+  } catch (e) { console.error('room inquiry event log failed', e); }
+
+  return { whatsappLink: link, summary: { name, phone, checkin, checkout, guests, note } };
 }
 
 // Safety net against a known LLM failure mode: occasionally a model echoes the
@@ -864,7 +940,7 @@ app.post('/api/gonxhe', async (req, res) => {
       if (data.stop_reason !== 'tool_use') break;
 
       // Run each requested tool and feed the results back for the next hop.
-      const toolResults = blocks.filter(b => b.type === 'tool_use').map(tu => {
+      const toolResults = await Promise.all(blocks.filter(b => b.type === 'tool_use').map(async tu => {
         let content;
         try {
           if (tu.name === 'prepare_booking_request') {
@@ -873,6 +949,8 @@ app.post('/api/gonxhe', async (req, res) => {
             content = JSON.stringify(runCaptureLead(sessionId, tu.input || {}, req));
           } else if (tu.name === 'check_trinosoft_availability') {
             content = JSON.stringify(await runTrinosoftAvailability(tu.input || {}, apiKey));
+          } else if (tu.name === 'send_room_inquiry') {
+            content = JSON.stringify(runRoomInquiry(sessionId, tu.input || {}, req));
           } else {
             content = JSON.stringify({ error: 'unknown_tool' });
           }
@@ -881,7 +959,7 @@ app.post('/api/gonxhe', async (req, res) => {
           content = JSON.stringify({ error: 'tool_failed' });
         }
         return { type: 'tool_result', tool_use_id: tu.id, content };
-      });
+      }));
       convo.push({ role: 'assistant', content: blocks });
       convo.push({ role: 'user', content: toolResults });
     }
